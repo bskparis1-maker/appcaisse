@@ -1,0 +1,441 @@
+/* ============ RESET DE BASE ============ */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: linear-gradient(135deg, #fdf2f8, #eef2ff);
+  margin: 0;
+  padding: 20px;
+  color: #111827;
+}
+
+/* ============ CONTENEUR PRINCIPAL ============ */
+.app-container {
+  max-width: 960px;
+  margin: 0 auto;
+  background: #ffffff;
+  padding: 24px 24px 32px;
+  border-radius: 18px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.12);
+}
+
+/* ============ HEADER ============ */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.logo {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 18px;
+  border: 2px solid #f97316;
+}
+
+h1 {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: 0.02em;
+}
+
+.subtitle {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+/* ============ NAVIGATION ============ */
+nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+nav button {
+  border: none;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.08s ease,
+    box-shadow 0.15s ease;
+}
+
+nav button:hover {
+  background: #4b5563;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.25);
+  transform: translateY(-1px);
+}
+
+nav button:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* ============ TITRES & VUES ============ */
+h2 {
+  margin-top: 24px;
+  margin-bottom: 12px;
+  font-size: 20px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 6px;
+}
+
+h3 {
+  margin-top: 16px;
+  margin-bottom: 8px;
+  font-size: 18px;
+}
+
+.view.hidden {
+  display: none;
+}
+
+/* ============ BOUTONS GÉNÉRAUX ============ */
+.primary-btn {
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(135deg, #ec4899, #f97316);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(249, 115, 22, 0.35);
+  transition: transform 0.1s ease, box-shadow 0.1s ease,
+    filter 0.12s ease;
+  margin-top: 8px;
+  margin-right: 6px;
+}
+
+.primary-btn:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+
+.primary-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 4px 10px rgba(249, 115, 22, 0.25);
+}
+
+.secondary-btn {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  color: #111827;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border 0.12s ease;
+  margin-top: 6px;
+}
+
+.secondary-btn:hover {
+  background: #e5e7eb;
+}
+
+.danger-btn {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border 0.12s ease;
+  margin-top: 8px;
+}
+
+.danger-btn:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+/* ============ PRODUITS (CAISSE) ============ */
+#products-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.product-card {
+  border: 1px solid #e5e7eb;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #f9fafb;
+  position: relative;
+  overflow: hidden;
+}
+
+.product-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at top right, #fef3c7, transparent 55%);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.product-card strong {
+  font-size: 15px;
+}
+
+.product-card label {
+  font-size: 13px;
+}
+
+.product-card input[type="number"] {
+  width: 72px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  border: 1px solid #d1d5db;
+  font-size: 13px;
+  margin-top: 3px;
+}
+
+.product-card button {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: none;
+  background: #10b981;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 13px;
+  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3);
+  transition: background 0.12s ease, transform 0.08s ease,
+    box-shadow 0.12s ease;
+}
+
+.product-card button:hover {
+  background: #059669;
+  transform: translateY(-1px);
+}
+
+.product-card button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
+}
+
+/* ============ CLIENT (CAISSE) ============ */
+#client-select {
+  margin-top: 4px;
+  margin-bottom: 8px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  border: 1px solid #d1d5db;
+  font-size: 13px;
+}
+
+/* ============ PAIEMENT & REMISE ============ */
+.payment-section {
+  margin-top: 14px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+}
+
+.payment-section h3 {
+  margin-top: 0;
+}
+
+.payment-section label {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.payment-section select {
+  margin-left: 4px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  border: 1px solid #d1d5db;
+  font-size: 13px;
+}
+
+.discount-box {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.discount-box input[type="number"],
+.discount-box input[type="text"] {
+  margin-top: 2px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  border: 1px solid #d1d5db;
+  font-size: 13px;
+  max-width: 220px;
+}
+
+/* ============ PANIER ============ */
+#cart-list > div {
+  padding: 4px 0;
+  font-size: 14px;
+}
+
+.total-label {
+  margin-top: 8px;
+  font-size: 16px;
+}
+
+/* ============ TABLES GÉNÉRALES ============ */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+table,
+th,
+td {
+  border: 1px solid #e5e7eb;
+}
+
+th,
+td {
+  padding: 8px;
+  text-align: left;
+}
+
+th {
+  background: #f3f4f6;
+  font-weight: 600;
+}
+
+table input[type="number"] {
+  width: 80px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  border: 1px solid #d1d5db;
+}
+
+table button {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: none;
+  background: #4b5563;
+  color: #ffffff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+table button:hover {
+  background: #111827;
+}
+
+/* ============ CLIENTS PAGE ============ */
+#client-search {
+  width: 100%;
+  max-width: 260px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+/* ============ TABLEAU DE BORD ============ */
+.dashboard-filters {
+  margin-top: 6px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dashboard-filters label {
+  font-size: 14px;
+  margin-right: 8px;
+}
+
+.dashboard-filters input[type="date"] {
+  margin-left: 4px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  border: 1px solid #d1d5db;
+  font-size: 13px;
+}
+
+.dashboard-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.dashboard-summary {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.dashboard-summary .card {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+}
+
+.dashboard-summary .label {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.dashboard-summary .value {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* ============ RESPONSIVE ============ */
+@media (max-width: 640px) {
+  body {
+    padding: 10px;
+  }
+
+  .app-container {
+    padding: 18px 14px 26px;
+    border-radius: 12px;
+  }
+
+  .header {
+    align-items: flex-start;
+  }
+
+  nav {
+    justify-content: flex-start;
+  }
+
+  .discount-box {
+    flex-direction: column;
+  }
+
+  .dashboard-filters {
+    padding: 8px 10px;
+  }
+
+  .dashboard-summary .value {
+    font-size: 16px;
+  }
+}

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Caisse - BSK</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="app-container">
+
+    <!-- HEADER -->
+    <div class="header">
+      <img src="logo.png" class="logo" alt="Logo BSK" onerror="this.style.display='none'">
+      <div>
+        <h1>Caisse - BSK</h1>
+        <p class="subtitle">Gestion des ventes & stocks synchronisés</p>
+      </div>
+    </div>
+
+    <!-- NAVIGATION -->
+    <nav>
+      <button onclick="showView('caisse')">Caisse</button>
+      <button onclick="showView('produits')">Produits</button>
+      <button onclick="showView('clients')">Clients</button>
+      <button onclick="showView('ventes')">Ventes</button>
+      <button onclick="showView('dashboard')">Tableau de bord</button>
+    </nav>
+
+    <!-- ==================== CAISSE ==================== -->
+    <section id="view-caisse" class="view">
+      <h2>Caisse</h2>
+
+      <div id="products-list"></div>
+
+      <!-- CLIENT -->
+      <h3>Client</h3>
+      <select id="client-select"></select>
+      <button onclick="openAddClientModal()" class="secondary-btn">+ Ajouter client</button>
+
+      <!-- PAIEMENT -->
+      <div class="payment-section">
+        <h3>Paiement</h3>
+
+        <label>
+          Mode de paiement :
+          <select id="payment-method">
+            <option value="cash">Espèces</option>
+            <option value="orange">Orange Money</option>
+            <option value="wave">Wave</option>
+          </select>
+        </label>
+
+        <div class="discount-box">
+          <label>
+            Remise (FCFA) :
+            <input type="number" id="cart-discount" value="0">
+          </label>
+
+          <label>
+            Raison :
+            <input type="text" id="cart-discount-reason" placeholder="Ex : geste commercial">
+          </label>
+        </div>
+      </div>
+
+      <!-- PANIER -->
+      <h3>Panier</h3>
+      <div id="cart-list"></div>
+
+      <p class="total-label">
+        <strong>Total :</strong>
+        <span id="cart-total">0</span> FCFA
+      </p>
+
+      <button onclick="confirmSale()" class="primary-btn">Valider la vente</button>
+      <button onclick="clearCart()" class="danger-btn">Annuler le panier</button>
+    </section>
+
+    <!-- ==================== PRODUITS ==================== -->
+    <section id="view-produits" class="view hidden">
+      <h2>Produits & Stock</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Nom</th>
+            <th>Prix</th>
+            <th>Stock</th>
+            <th>Modifier</th>
+          </tr>
+        </thead>
+        <tbody id="products-table-body"></tbody>
+      </table>
+    </section>
+
+    <!-- ==================== CLIENTS ==================== -->
+    <section id="view-clients" class="view hidden">
+      <h2>Clients</h2>
+
+      <input id="client-search" type="text" placeholder="Rechercher..." oninput="renderClientsTable()">
+
+      <table>
+        <thead>
+          <tr>
+            <th>Nom</th>
+            <th>Téléphone</th>
+            <th>Total achats</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="clients-table-body"></tbody>
+      </table>
+    </section>
+
+    <!-- ==================== VENTES ==================== -->
+    <section id="view-ventes" class="view hidden">
+      <h2>Ventes</h2>
+
+      <p class="total-label">
+        Total du jour :
+        <span id="today-total">0</span> FCFA
+      </p>
+
+      <p class="total-label">
+        Espèces : <span id="today-total-cash">0</span> FCFA ·
+        Orange Money : <span id="today-total-orange">0</span> FCFA ·
+        Wave : <span id="today-total-wave">0</span> FCFA
+      </p>
+
+      <button class="primary-btn" onclick="openDailyReport()">Télécharger rapport PDF</button>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody id="sales-table-body"></tbody>
+      </table>
+    </section>
+
+    <!-- ==================== TABLEAU DE BORD ==================== -->
+    <section id="view-dashboard" class="view hidden">
+      <h2>Tableau de bord</h2>
+
+      <div class="dashboard-filters">
+        <label>Du :
+          <input type="date" id="dashboard-start">
+        </label>
+
+        <label>Au :
+          <input type="date" id="dashboard-end">
+        </label>
+
+        <button onclick="loadDashboardStats()" class="secondary-btn">Actualiser</button>
+
+        <div class="dashboard-quick">
+          <button class="secondary-btn" onclick="setDashboardRangeToday()">Aujourd’hui</button>
+          <button class="secondary-btn" onclick="setDashboardRangeWeek()">Cette semaine</button>
+          <button class="secondary-btn" onclick="setDashboardRangeMonth()">Ce mois-ci</button>
+          <button class="secondary-btn" onclick="setDashboardRangeYear()">Cette année</button>
+        </div>
+      </div>
+
+      <div class="dashboard-summary">
+        <div class="card"><div class="label">CA Total</div><div class="value" id="db-total">0</div></div>
+        <div class="card"><div class="label">Ventes</div><div class="value" id="db-count">0</div></div>
+        <div class="card"><div class="label">Panier moyen</div><div class="value" id="db-average">0</div></div>
+        <div class="card"><div class="label">Remises</div><div class="value" id="db-discount">0</div></div>
+        <div class="card"><div class="label">Espèces</div><div class="value" id="db-cash">0</div></div>
+        <div class="card"><div class="label">Orange</div><div class="value" id="db-orange">0</div></div>
+        <div class="card"><div class="label">Wave</div><div class="value" id="db-wave">0</div></div>
+      </div>
+    </section>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
