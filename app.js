@@ -950,10 +950,8 @@ function getSelectedSalesDate() {
 
 function saleMatchesDate(sale, dateStr) {
   if (!dateStr) return true;
-  const d = new Date(sale.date);
-  if (isNaN(d)) return false;
-  const iso = d.toISOString().slice(0, 10);
-  return iso === dateStr;
+  const dstr = (sale.date || "").toString().slice(0, 10); // "YYYY-MM-DD"
+  return dstr === dateStr;
 }
 
 function getSalesForDate(dateStr) {
