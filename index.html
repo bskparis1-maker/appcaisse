@@ -15,7 +15,7 @@
       <img src="logo.png" class="logo" alt="Logo BSK" onerror="this.style.display='none'">
       <div>
         <h1>Caisse - BSK</h1>
-        <p class="subtitle">Gestion des ventes & stocks synchronisés</p>
+        <p class="subtitle">Gestion des ventes, stocks & bar à parfum</p>
       </div>
     </div>
 
@@ -25,10 +25,11 @@
       <button onclick="showView('produits')">Produits</button>
       <button onclick="showView('clients')">Clients</button>
       <button onclick="showView('ventes')">Ventes</button>
+      <button onclick="showView('barparfum')">Bar à parfum</button>
       <button onclick="showView('dashboard')">Tableau de bord</button>
     </nav>
 
-    <!-- ==================== CAISSE ==================== -->
+    <!-- =============== CAISSE =============== -->
     <section id="view-caisse" class="view">
       <h2>Caisse</h2>
 
@@ -78,7 +79,7 @@
       <button onclick="clearCart()" class="danger-btn">Annuler le panier</button>
     </section>
 
-    <!-- ==================== PRODUITS ==================== -->
+    <!-- =============== PRODUITS & STOCK =============== -->
     <section id="view-produits" class="view hidden">
       <h2>Produits & Stock</h2>
       <table>
@@ -94,7 +95,7 @@
       </table>
     </section>
 
-    <!-- ==================== CLIENTS ==================== -->
+    <!-- =============== CLIENTS =============== -->
     <section id="view-clients" class="view hidden">
       <h2>Clients</h2>
 
@@ -113,7 +114,7 @@
       </table>
     </section>
 
-    <!-- ==================== VENTES ==================== -->
+    <!-- =============== VENTES =============== -->
     <section id="view-ventes" class="view hidden">
       <h2>Ventes</h2>
 
@@ -141,7 +142,29 @@
       </table>
     </section>
 
-    <!-- ==================== TABLEAU DE BORD ==================== -->
+    <!-- =============== BAR À PARFUM =============== -->
+    <section id="view-barparfum" class="view hidden">
+      <h2>Bar à parfum</h2>
+      <p>Mise à jour manuelle des niveaux de stock (synchronisés via Google Sheets).</p>
+
+      <table class="table-perfume">
+        <thead>
+          <tr>
+            <th>Référence</th>
+            <th>Niveau</th>
+          </tr>
+        </thead>
+        <tbody id="perfume-table-body"></tbody>
+      </table>
+
+      <p class="legend">
+        <span class="legend-full">1L ou plus</span>
+        <span class="legend-half">0,5L</span>
+        <span class="legend-out">Rupture</span>
+      </p>
+    </section>
+
+    <!-- =============== TABLEAU DE BORD =============== -->
     <section id="view-dashboard" class="view hidden">
       <h2>Tableau de bord</h2>
 
