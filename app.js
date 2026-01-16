@@ -27,9 +27,9 @@ const defaultProducts = [
 
 // ================== BAR À PARFUM ==================
 const PERFUME_LEVELS = {
-  full: { label: "1L ou plus", className: "perfume-full" }, // vert
-  half: { label: "0,5L",       className: "perfume-half" }, // orange
-  out:  { label: "Rupture",    className: "perfume-out" }   // rouge
+  full: { label: "1L ou plus", className: "perfume-full" },
+  half: { label: "0,5L",       className: "perfume-half" },
+  out:  { label: "Rupture",    className: "perfume-out" }
 };
 
 // ================== LOCAL STORAGE HELPERS ==================
@@ -91,8 +91,6 @@ function fetchStockFromSheet() {
       renderCart();
 
       fetchSalesFromSheet();
-      delete window[callbackName];
-      script.remove();
     }
   };
 
@@ -218,9 +216,7 @@ function fetchSalesFromSheet() {
         saveSales(sales);
       }
     } finally {
-      renderSalesTable();
-      updateTodayTotal();
-      updateTodayTotalsByPayment();
+      updateSalesViewForSelectedDate();
       renderClientsTable();
       delete window[callbackName];
       script.remove();
@@ -230,12 +226,14 @@ function fetchSalesFromSheet() {
   script.src = `${SHEET_URL}?action=getSales&callback=${callbackName}`;
   script.onerror = function () {
     console.warn("Erreur chargement ventes (local uniquement).");
-    renderSalesTable();
-    updateTodayTotal();
-    updateTodayTotalsByPayment();
+    updateSalesViewForSelectedDate();
     renderClientsTable();
   };
   document.body.appendChild(script);
+}
+
+function refreshSalesFromSheet() {
+  fetchSalesFromSheet();
 }
 
 // ================== BAR À PARFUM <-> SHEETS ==================
@@ -283,12 +281,6 @@ function showView(viewName) {
   const view = document.getElementById(`view-${viewName}`);
   if (view) view.classList.remove("hidden");
 
-  // nav active
-  document.querySelectorAll("nav button").forEach(btn => {
-    const target = btn.getAttribute("data-view");
-    btn.classList.toggle("active", target === viewName);
-  });
-
   if (viewName === "caisse") {
     renderProductsForSale();
     renderCart();
@@ -298,7 +290,8 @@ function showView(viewName) {
   } else if (viewName === "clients") {
     renderClientsTable();
   } else if (viewName === "ventes") {
-    renderSalesTable();
+    initSalesDate();
+    updateSalesViewForSelectedDate();
   } else if (viewName === "dashboard") {
     initDashboardDates();
     loadDashboardStats();
@@ -516,7 +509,7 @@ function confirmSale() {
   const methodSelect = document.getElementById("payment-method");
   const paymentMethod = methodSelect ? methodSelect.value : "cash";
 
-  // Client & fidélité par tranche de 100 000
+  // Client & fidélité
   const select = document.getElementById("client-select");
   let clientId = null;
   let clientName = "";
@@ -613,8 +606,9 @@ function confirmSale() {
   openReceiptWindow(sale);
   clearCart();
   renderProductsForSale();
-  updateTodayTotal();
-  updateTodayTotalsByPayment();
+
+  // maj vue ventes pour la date sélectionnée (en général aujourd'hui)
+  updateSalesViewForSelectedDate();
 
   alert("Vente enregistrée !");
 }
@@ -934,133 +928,170 @@ function alertClientInfo(clientId) {
   );
 }
 
-// ================== VENTES (ONGLET VENTES) ==================
-function updateTodayTotal() {
-  const today = new Date();
-  const y = today.getFullYear();
-  const m = today.getMonth();
-  const d = today.getDate();
-
-  let total = 0;
-  sales.forEach(sale => {
-    const sd = new Date(sale.date);
-    if (sd.getFullYear() === y && sd.getMonth() === m && sd.getDate() === d) {
-      total += sale.total;
-    }
-  });
-
-  const span = document.getElementById("today-total");
-  if (span) span.textContent = total;
+// ================== VENTES (FILTRAGE PAR JOUR) ==================
+function initSalesDate() {
+  const input = document.getElementById("sales-date");
+  if (!input) return;
+  if (!input.value) {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    input.value = todayIso;
+  }
 }
 
-function updateTodayTotalsByPayment() {
-  const today = new Date();
-  const y = today.getFullYear();
-  const m = today.getMonth();
-  const d = today.getDate();
+function getSelectedSalesDate() {
+  const input = document.getElementById("sales-date");
+  if (!input || !input.value) {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    if (input) input.value = todayIso;
+    return todayIso;
+  }
+  return input.value;
+}
 
+function saleMatchesDate(sale, dateStr) {
+  if (!dateStr) return true;
+  const d = new Date(sale.date);
+  if (isNaN(d)) return false;
+  const iso = d.toISOString().slice(0, 10);
+  return iso === dateStr;
+}
+
+function getSalesForDate(dateStr) {
+  return sales.filter(sale => saleMatchesDate(sale, dateStr));
+}
+
+function updateTotalsForDate(dateStr) {
+  const list = getSalesForDate(dateStr);
+
+  let total = 0;
   let cash = 0, orange = 0, wave = 0;
 
-  sales.forEach(sale => {
-    const sd = new Date(sale.date);
-    if (sd.getFullYear() === y && sd.getMonth() === m && sd.getDate() === d) {
-      const method = sale.paymentMethod || "cash";
-      if (method === "orange") orange += sale.total;
-      else if (method === "wave") wave += sale.total;
-      else cash += sale.total;
-    }
+  list.forEach(sale => {
+    total += sale.total;
+    const method = sale.paymentMethod || "cash";
+    if (method === "orange") orange += sale.total;
+    else if (method === "wave") wave += sale.total;
+    else cash += sale.total;
   });
 
+  const spanTotal = document.getElementById("today-total");
   const spanCash = document.getElementById("today-total-cash");
   const spanOrange = document.getElementById("today-total-orange");
   const spanWave = document.getElementById("today-total-wave");
 
+  if (spanTotal) spanTotal.textContent = total;
   if (spanCash) spanCash.textContent = cash;
   if (spanOrange) spanOrange.textContent = orange;
   if (spanWave) spanWave.textContent = wave;
 }
 
-function renderSalesTable() {
+function renderSalesTable(dateStr) {
   const tbody = document.getElementById("sales-table-body");
   if (!tbody) return;
   tbody.innerHTML = "";
 
-  sales.forEach(sale => {
+  const list = getSalesForDate(dateStr);
+
+  if (list.length === 0) {
     const tr = document.createElement("tr");
-    const dateStr = new Date(sale.date).toLocaleString("fr-FR");
+    tr.innerHTML = `<td colspan="2">Aucune vente pour ce jour.</td>`;
+    tbody.appendChild(tr);
+    return;
+  }
+
+  list.forEach(sale => {
+    const tr = document.createElement("tr");
+    const dateObj = new Date(sale.date);
+    const dateStrFull = dateObj.toLocaleString("fr-FR");
     tr.innerHTML = `
-      <td>${dateStr}</td>
+      <td>${dateStrFull}</td>
       <td>${sale.total} FCFA</td>
     `;
     tbody.appendChild(tr);
   });
 }
 
-// ================== RAPPORT JOURNALIER ==================
-function getTodaySales() {
-  const today = new Date();
-  const y = today.getFullYear();
-  const m = today.getMonth();
-  const d = today.getDate();
-
-  return sales.filter(sale => {
-    const sd = new Date(sale.date);
-    return sd.getFullYear() === y && sd.getMonth() === m && sd.getDate() === d;
-  });
+function updateSalesViewForSelectedDate() {
+  const dateStr = getSelectedSalesDate();
+  renderSalesTable(dateStr);
+  updateTotalsForDate(dateStr);
 }
 
-function openDailyReport() {
-  const todaySales = getTodaySales();
-  const today = new Date();
-  const dateLabel = today.toLocaleDateString("fr-FR");
+// ================== RAPPORT JOURNALIER (PDF) ==================
+function openDailyReportForSelectedDate() {
+  const dateStr = getSelectedSalesDate();
+  openDailyReportForDate(dateStr);
+}
 
-  if (todaySales.length === 0) {
-    alert("Aucune vente pour aujourd'hui.");
+function openDailyReportForDate(dateStr) {
+  const daySales = getSalesForDate(dateStr);
+  if (daySales.length === 0) {
+    alert("Aucune vente pour ce jour.");
     return;
   }
 
-  let total = 0;
-  const productMap = {};
+  const dateLabel = new Date(dateStr + "T00:00:00").toLocaleDateString("fr-FR");
 
-  todaySales.forEach(sale => {
+  let total = 0;
+  const productMap = {}; // name -> { qty, amount, unitPrice, times[] }
+
+  daySales.forEach(sale => {
     total += sale.total;
+
+    // Somme de base avant remise
+    let baseSum = 0;
+    sale.items.forEach(item => {
+      const product = products.find(p => p.id === item.productId);
+      const unit = product ? product.price : 0;
+      baseSum += unit * item.qty;
+    });
+
+    const saleDiscountTotal =
+      (sale.promoDiscount || 0) +
+      (sale.manualDiscount || 0) +
+      (sale.loyaltyDiscount || 0);
+
+    const saleTime = new Date(sale.date).toLocaleTimeString("fr-FR", {
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+
     sale.items.forEach(item => {
       const product = products.find(p => p.id === item.productId);
       const name = item.name || (product ? product.name : "");
       const unitPrice = product ? product.price : 0;
+      const lineBase = unitPrice * item.qty;
+
+      let lineFinal = lineBase;
+      if (baseSum > 0 && saleDiscountTotal > 0) {
+        const ratio = lineBase / baseSum;
+        const lineDiscount = Math.round(saleDiscountTotal * ratio);
+        lineFinal = lineBase - lineDiscount;
+      }
+
       if (!productMap[name]) {
-        productMap[name] = { qty: 0, amount: 0, unitPrice };
+        productMap[name] = { qty: 0, amount: 0, unitPrice: unitPrice, times: [] };
       }
       productMap[name].qty += item.qty;
-      productMap[name].amount += unitPrice * item.qty;
+      productMap[name].amount += lineFinal;
+      productMap[name].times.push(saleTime);
     });
   });
 
-  const average = Math.round(total / todaySales.length);
-
-  let salesRows = "";
-  todaySales.forEach(sale => {
-    const timeStr = new Date(sale.date).toLocaleTimeString("fr-FR", {
-      hour: "2-digit",
-      minute: "2-digit"
-    });
-    salesRows += `
-      <tr>
-        <td>${timeStr}</td>
-        <td style="text-align:right;">${sale.total} FCFA</td>
-      </tr>
-    `;
-  });
+  const average = Math.round(total / daySales.length);
 
   let productRows = "";
   Object.keys(productMap).forEach(name => {
     const info = productMap[name];
+    const timesStr = info.times.join(", ");
+    const unitDisplay = info.qty > 0 ? Math.round(info.amount / info.qty) : info.unitPrice;
     productRows += `
       <tr>
         <td>${name}</td>
         <td style="text-align:center;">${info.qty}</td>
-        <td style="text-align:right;">${info.unitPrice} FCFA</td>
+        <td style="text-align:right;">${unitDisplay} FCFA</td>
         <td style="text-align:right;">${info.amount} FCFA</td>
+        <td>${timesStr}</td>
       </tr>
     `;
   });
@@ -1070,7 +1101,7 @@ function openDailyReport() {
     <html lang="fr">
     <head>
       <meta charset="UTF-8">
-      <title>Rapport du jour - BSK</title>
+      <title>Rapport du ${dateLabel} - BSK</title>
       <style>
         body {
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -1140,7 +1171,7 @@ function openDailyReport() {
         <div class="report-header">
           <img src="logo.png" alt="Logo BSK" onerror="this.style.display='none'">
           <div>
-            <h1>Rapport du jour - BSK</h1>
+            <h1>Rapport de ventes</h1>
             <div class="subtitle">
               Date : ${dateLabel}<br>
               Grand Dakar – Garage Casamance · Tél : 77 876 92 01
@@ -1150,32 +1181,20 @@ function openDailyReport() {
 
         <h2>Résumé</h2>
         <div class="summary">
-          Nombre de ventes : <strong>${todaySales.length}</strong><br>
+          Nombre de ventes : <strong>${daySales.length}</strong><br>
           Total du jour : <strong>${total} FCFA</strong><br>
           Panier moyen : <strong>${average} FCFA</strong>
         </div>
 
-        <h2>Détail des ventes</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Heure</th>
-              <th>Montant</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${salesRows}
-          </tbody>
-        </table>
-
-        <h2>Répartition par produit</h2>
+        <h2>Répartition par produit (prix après remise)</h2>
         <table>
           <thead>
             <tr>
               <th>Produit</th>
               <th>Quantité vendue</th>
-              <th>Prix unitaire</th>
-              <th>Montant total</th>
+              <th>Prix moyen (avec remise)</th>
+              <th>Montant total (avec remise)</th>
+              <th>Heure(s) de vente</th>
             </tr>
           </thead>
           <tbody>
