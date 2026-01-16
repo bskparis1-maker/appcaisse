@@ -283,6 +283,12 @@ function showView(viewName) {
   const view = document.getElementById(`view-${viewName}`);
   if (view) view.classList.remove("hidden");
 
+  // nav active
+  document.querySelectorAll("nav button").forEach(btn => {
+    const target = btn.getAttribute("data-view");
+    btn.classList.toggle("active", target === viewName);
+  });
+
   if (viewName === "caisse") {
     renderProductsForSale();
     renderCart();
