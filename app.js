@@ -1386,12 +1386,19 @@ function changePerfumeLevel(index, newLevel) {
 document.addEventListener("DOMContentLoaded", () => {
   showView("caisse");
 
-  fetchStockFromSheet();
-  fetchClientsFromSheet();
-  fetchPerfumesFromSheet();
+  // Charger les données au démarrage
+  fetchStockFromSheet();      // produits + stock
+  fetchClientsFromSheet();    // clients
+  fetchPerfumesFromSheet();   // bar à parfum
+  fetchSalesFromSheet();      // toutes les ventes déjà présentes
 
   const discountInput = document.getElementById("cart-discount");
   if (discountInput) {
     discountInput.addEventListener("input", renderCart);
   }
+
+  // 🔄 Rafraîchissement automatique des ventes toutes les 30 secondes
+  setInterval(() => {
+    fetchSalesFromSheet();
+  }, 30000); // 30 000 ms = 30 secondes
 });
