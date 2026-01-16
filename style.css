@@ -1,441 +1,345 @@
-/* ============ RESET DE BASE ============ */
+/* ====== GLOBAL ====== */
 * {
   box-sizing: border-box;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: linear-gradient(135deg, #fdf2f8, #eef2ff);
   margin: 0;
-  padding: 20px;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f3f4f6;
   color: #111827;
 }
 
-/* ============ CONTENEUR PRINCIPAL ============ */
 .app-container {
   max-width: 960px;
-  margin: 0 auto;
+  margin: 16px auto;
+  padding: 16px;
   background: #ffffff;
-  padding: 24px 24px 32px;
-  border-radius: 18px;
-  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.12);
+  border-radius: 16px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
 }
 
-/* ============ HEADER ============ */
+/* ====== HEADER ====== */
 .header {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-bottom: 18px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .logo {
-  width: 60px;
-  height: 60px;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
   object-fit: cover;
-  border-radius: 18px;
-  border: 2px solid #f97316;
+  border: 1px solid #e5e7eb;
 }
 
 h1 {
   margin: 0;
-  font-size: 26px;
-  letter-spacing: 0.02em;
+  font-size: 22px;
 }
 
 .subtitle {
-  margin: 3px 0 0;
+  margin: 2px 0 0;
   font-size: 13px;
   color: #6b7280;
 }
 
-/* ============ NAVIGATION ============ */
+/* ====== NAV ====== */
 nav {
   display: flex;
-  gap: 8px;
-  margin-bottom: 20px;
-  justify-content: center;
   flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 16px;
 }
 
 nav button {
-  border: none;
-  padding: 8px 16px;
+  padding: 6px 10px;
   border-radius: 999px;
-  background: #111827;
-  color: #ffffff;
-  font-size: 14px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  font-size: 13px;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.08s ease,
-    box-shadow 0.15s ease;
+  transition: background 0.15s, transform 0.05s;
 }
 
 nav button:hover {
-  background: #4b5563;
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.25);
-  transform: translateY(-1px);
+  background: #e5e7eb;
 }
 
 nav button:active {
-  transform: translateY(0);
-  box-shadow: none;
+  transform: scale(0.97);
 }
 
-/* ============ TITRES & VUES ============ */
-h2 {
-  margin-top: 24px;
-  margin-bottom: 12px;
-  font-size: 20px;
-  border-bottom: 1px solid #e5e7eb;
-  padding-bottom: 6px;
-}
-
-h3 {
-  margin-top: 16px;
-  margin-bottom: 8px;
-  font-size: 18px;
+/* ====== VUES ====== */
+.view {
+  margin-top: 8px;
 }
 
 .view.hidden {
   display: none;
 }
 
-/* ============ BOUTONS GÉNÉRAUX ============ */
-.primary-btn {
-  padding: 10px 18px;
-  border-radius: 999px;
-  border: none;
-  background: linear-gradient(135deg, #ec4899, #f97316);
-  color: #ffffff;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 8px 18px rgba(249, 115, 22, 0.35);
-  transition: transform 0.1s ease, box-shadow 0.1s ease,
-    filter 0.12s ease;
-  margin-top: 8px;
-  margin-right: 6px;
-}
-
-.primary-btn:hover {
-  filter: brightness(1.05);
-  transform: translateY(-1px);
-}
-
-.primary-btn:active {
-  transform: translateY(0);
-  box-shadow: 0 4px 10px rgba(249, 115, 22, 0.25);
-}
-
-.secondary-btn {
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid #d1d5db;
-  background: #f9fafb;
-  color: #111827;
-  font-size: 14px;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, border 0.12s ease;
-  margin-top: 6px;
-}
-
-.secondary-btn:hover {
-  background: #e5e7eb;
-}
-
-.danger-btn {
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid #fecaca;
-  background: #fef2f2;
-  color: #b91c1c;
-  font-size: 14px;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, border 0.12s ease;
-  margin-top: 8px;
-}
-
-.danger-btn:hover {
-  background: #fee2e2;
-  border-color: #fca5a5;
-}
-
-/* ============ PRODUITS (CAISSE) ============ */
-#products-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-}
-
-.product-card {
-  border: 1px solid #e5e7eb;
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: #f9fafb;
-  position: relative;
-  overflow: hidden;
-}
-
-.product-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at top right, #fef3c7, transparent 55%);
-  opacity: 0.7;
-  pointer-events: none;
-}
-
-.product-card strong {
-  font-size: 15px;
-}
-
-.product-card label {
-  font-size: 13px;
-}
-
-.product-card input[type="number"] {
-  width: 72px;
-  padding: 4px 6px;
-  border-radius: 7px;
-  border: 1px solid #d1d5db;
-  font-size: 13px;
-  margin-top: 3px;
-}
-
-.product-card button {
-  margin-top: 6px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: none;
-  background: #10b981;
-  color: #ffffff;
-  cursor: pointer;
-  font-size: 13px;
-  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3);
-  transition: background 0.12s ease, transform 0.08s ease,
-    box-shadow 0.12s ease;
-}
-
-.product-card button:hover {
-  background: #059669;
-  transform: translateY(-1px);
-}
-
-.product-card button:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
-}
-
-/* ============ CLIENT (CAISSE) ============ */
-#client-select {
-  margin-top: 4px;
-  margin-bottom: 8px;
-  padding: 4px 6px;
-  border-radius: 7px;
-  border: 1px solid #d1d5db;
-  font-size: 13px;
-}
-
-/* ============ PAIEMENT & REMISE ============ */
-.payment-section {
-  margin-top: 14px;
-  margin-bottom: 12px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-}
-
-.payment-section h3 {
+h2 {
   margin-top: 0;
+  font-size: 18px;
 }
 
-.payment-section label {
-  display: block;
-  font-size: 14px;
-  margin-bottom: 6px;
+h3 {
+  margin-top: 16px;
+  font-size: 15px;
 }
 
-.payment-section select {
-  margin-left: 4px;
-  padding: 4px 6px;
-  border-radius: 7px;
-  border: 1px solid #d1d5db;
-  font-size: 13px;
-}
-
-.discount-box {
-  margin-top: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.discount-box input[type="number"],
-.discount-box input[type="text"] {
-  margin-top: 2px;
-  padding: 4px 6px;
-  border-radius: 7px;
-  border: 1px solid #d1d5db;
-  font-size: 13px;
-  max-width: 220px;
-}
-
-/* ============ PANIER ============ */
-#cart-list > div {
-  padding: 4px 0;
-  font-size: 14px;
-}
-
-.total-label {
-  margin-top: 8px;
-  font-size: 16px;
-}
-
-/* ============ TABLES GÉNÉRALES ============ */
-table {
-  border-collapse: collapse;
-  width: 100%;
-  margin-top: 10px;
-  font-size: 14px;
-}
-
-table,
-th,
-td {
-  border: 1px solid #e5e7eb;
-}
-
-th,
-td {
-  padding: 8px;
-  text-align: left;
-}
-
-th {
-  background: #f3f4f6;
-  font-weight: 600;
-}
-
-table input[type="number"] {
-  width: 80px;
-  padding: 4px 6px;
-  border-radius: 7px;
-  border: 1px solid #d1d5db;
-}
-
-table button {
-  padding: 5px 10px;
-  border-radius: 999px;
-  border: none;
-  background: #4b5563;
-  color: #ffffff;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.12s ease;
-}
-
-table button:hover {
-  background: #111827;
-}
-
-/* ============ CLIENTS PAGE ============ */
-#client-search {
-  width: 100%;
-  max-width: 260px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  border: 1px solid #d1d5db;
-  font-size: 13px;
-  margin-bottom: 8px;
-}
-
-/* ============ TABLEAU DE BORD ============ */
-.dashboard-filters {
-  margin-top: 6px;
-  margin-bottom: 12px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
+/* ====== PRODUITS EN CAISSE ====== */
+#products-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.dashboard-filters label {
+.product-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #f9fafb;
+  font-size: 13px;
+}
+
+.product-card strong {
   font-size: 14px;
-  margin-right: 8px;
+}
+
+.product-card input[type="number"] {
+  width: 80px;
+  padding: 2px 4px;
+  margin-left: 4px;
+}
+
+/* ====== BOUTONS GLOBAUX ====== */
+button {
+  font-family: inherit;
+}
+
+.primary-btn,
+.secondary-btn,
+.danger-btn {
+  margin-top: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+}
+
+.primary-btn {
+  background: #111827;
+  color: #ffffff;
+}
+
+.primary-btn:hover {
+  background: #000000;
+}
+
+.secondary-btn {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+.secondary-btn:hover {
+  background: #d1d5db;
+}
+
+.danger-btn {
+  background: #f97373;
+  color: #ffffff;
+}
+
+.danger-btn:hover {
+  background: #ef4444;
+}
+
+/* ====== PANIER ====== */
+#cart-list {
+  border: 1px dashed #e5e7eb;
+  border-radius: 8px;
+  padding: 6px 8px;
+  min-height: 40px;
+  font-size: 13px;
+}
+
+.total-label {
+  margin-top: 8px;
+  font-size: 14px;
+}
+
+/* ====== PAIEMENT ====== */
+.payment-section label {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.payment-section select,
+.payment-section input[type="number"],
+.payment-section input[type="text"] {
+  margin-top: 2px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  font-size: 13px;
+}
+
+.discount-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* ====== TABLES ====== */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+th, td {
+  border: 1px solid #e5e7eb;
+  padding: 6px 8px;
+}
+
+th {
+  background: #f3f4f6;
+  text-align: left;
+}
+
+/* ====== CLIENTS ====== */
+#client-search {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+/* ====== DASHBOARD ====== */
+.dashboard-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.dashboard-filters label {
+  font-size: 13px;
 }
 
 .dashboard-filters input[type="date"] {
-  margin-left: 4px;
   padding: 4px 6px;
-  border-radius: 7px;
-  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
   font-size: 13px;
+  margin-left: 4px;
 }
 
 .dashboard-quick {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 4px;
 }
 
 .dashboard-summary {
-  margin-top: 10px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
 }
 
 .dashboard-summary .card {
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: #f9fafb;
+  border-radius: 10px;
   border: 1px solid #e5e7eb;
+  padding: 8px 10px;
+  background: #f9fafb;
 }
 
 .dashboard-summary .label {
-  font-size: 12px;
+  font-size: 11px;
   color: #6b7280;
-  margin-bottom: 4px;
 }
 
 .dashboard-summary .value {
-  font-size: 18px;
+  margin-top: 6px;
+  font-size: 16px;
   font-weight: 600;
 }
 
-/* ============ RESPONSIVE ============ */
-@media (max-width: 640px) {
-  body {
-    padding: 10px;
-  }
+/* ====== BAR À PARFUM ====== */
+.table-perfume {
+  width: 100%;
+  border-collapse: collapse;
+}
 
+.table-perfume th,
+.table-perfume td {
+  border: 1px solid #e5e7eb;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.table-perfume th {
+  background: #f3f4f6;
+}
+
+/* Couleurs par niveau */
+.perfume-full td {
+  background: #dcfce7; /* vert pâle */
+}
+
+.perfume-half td {
+  background: #ffedd5; /* orange pâle */
+}
+
+.perfume-out td {
+  background: #fee2e2; /* rouge pâle */
+}
+
+/* Légende bar à parfum */
+.legend {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.legend span {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 6px;
+  margin-right: 6px;
+}
+
+.legend-full {
+  background: #dcfce7;
+}
+
+.legend-half {
+  background: #ffedd5;
+}
+
+.legend-out {
+  background: #fee2e2;
+}
+
+/* ====== RESPONSIVE ====== */
+@media (max-width: 640px) {
   .app-container {
-    padding: 18px 14px 26px;
-    border-radius: 12px;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
   }
 
   .header {
-    align-items: flex-start;
-  }
-
-  nav {
-    justify-content: flex-start;
-  }
-
-  .discount-box {
-    flex-direction: column;
-  }
-
-  .dashboard-filters {
-    padding: 8px 10px;
-  }
-
-  .dashboard-summary .value {
-    font-size: 16px;
+    flex-direction: row;
   }
 }
