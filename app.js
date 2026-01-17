@@ -164,56 +164,61 @@ function fetchClientsFromSheet() {
 
 // ================== VENTES <-> SHEETS ==================
 function fetchSalesFromSheet() {
+  const debugEl = document.getElementById("sales-debug");
+  if (debugEl) {
+    debugEl.textContent = "Connexion à Google Sheets…";
+  }
+
   const callbackName = "onSalesFromSheet_" + Date.now();
   const script = document.createElement("script");
 
   window[callbackName] = function (data) {
     try {
       if (data && Array.isArray(data.sales)) {
+        // On transforme ce que renvoie Code.gs en objets "vente"
         sales = data.sales.map(s => {
           const info = s.info || {};
+
+          // Liste produits + quantités
           const names = (s.productNames || "")
             .split(",")
             .map(t => t.trim())
             .filter(Boolean);
+
           const qtys = (s.quantities || "")
             .split(",")
             .map(t => parseInt(t, 10) || 0);
 
-          const items = names.map((name, index) => {
-            const product = products.find(p => p.name === name);
-            return {
-              productId: product ? product.id : null,
-              name,
-              qty: qtys[index] || 0
-            };
-          });
-
-          const total = Number(s.total) || 0;
-          const discountAmount = Number(info.discountAmount) || 0;
-          const loyaltyDiscount = Number(info.loyaltyDiscount) || 0;
-          const baseTotal = total + discountAmount;
-          const manualDiscount = discountAmount - loyaltyDiscount;
+          const items = names.map((name, index) => ({
+            name,
+            qty: qtys[index] || 0
+          }));
 
           return {
             id: s.id,
-            date: s.date,
-            baseTotal: baseTotal,
-            total: total,
+            date: s.date,                            // "YYYY-MM-DDTHH:mm:ss"
+            total: Number(s.total) || 0,             // montant payé
             items,
             paymentMethod: info.paymentMethod || "cash",
-            promoDiscount: 0,
-            manualDiscount: manualDiscount > 0 ? manualDiscount : 0,
-            loyaltyDiscount: loyaltyDiscount,
-            discountAmount: discountAmount,
+            discountAmount: Number(info.discountAmount) || 0,
             discountReason: info.discountReason || "",
-            clientId: info.clientId ? Number(info.clientId) : null,
+            clientId: info.clientId || "",
             clientName: info.clientName || "",
             clientPhone: info.clientPhone || ""
           };
         });
 
         saveSales(sales);
+
+        if (debugEl) {
+          debugEl.textContent =
+            "Ventes reçues depuis Google Sheets : " + sales.length;
+        }
+      } else {
+        if (debugEl) {
+          debugEl.textContent =
+            "Réponse vide ou invalide depuis Google Sheets.";
+        }
       }
     } finally {
       updateSalesViewForSelectedDate();
@@ -226,16 +231,20 @@ function fetchSalesFromSheet() {
   script.src = `${SHEET_URL}?action=getSales&callback=${callbackName}`;
   script.onerror = function () {
     console.warn("Erreur chargement ventes (local uniquement).");
+    if (debugEl) {
+      debugEl.textContent =
+        "Erreur de connexion à Google Sheets (getSales).";
+    }
     updateSalesViewForSelectedDate();
     renderClientsTable();
   };
+
   document.body.appendChild(script);
 }
 
 function refreshSalesFromSheet() {
   fetchSalesFromSheet();
 }
-
 // ================== BAR À PARFUM <-> SHEETS ==================
 function fetchPerfumesFromSheet() {
   const callbackName = "onPerfumes_" + Date.now();
