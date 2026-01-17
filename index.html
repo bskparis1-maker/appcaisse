@@ -2,9 +2,13 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Caisse - BSK</title>
+  <title>BSK - Caisse</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
   <link rel="stylesheet" href="style.css">
+
+  <!-- Chart.js pour le tableau de bord -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
@@ -12,14 +16,14 @@
 
     <!-- HEADER -->
     <div class="header">
-      <img src="logo.png" class="logo" alt="Logo BSK" onerror="this.style.display='none'">
+      <img src="logo.png" class="logo" alt="Logo Boutique" onerror="this.style.display='none'">
       <div>
-        <h1>Caisse - BSK</h1>
-        <p class="subtitle">Gestion des ventes, stocks & bar à parfum</p>
+        <h1>BSK - Caisse</h1>
+        <p class="subtitle">Gestion des ventes & stock</p>
       </div>
     </div>
 
-    <!-- NAVIGATION -->
+    <!-- NAV -->
     <nav>
       <button onclick="showView('caisse')">Caisse</button>
       <button onclick="showView('produits')">Produits</button>
@@ -29,16 +33,21 @@
       <button onclick="showView('dashboard')">Tableau de bord</button>
     </nav>
 
-    <!-- =============== CAISSE =============== -->
+    <!-- ============================ CAISSE ============================ -->
     <section id="view-caisse" class="view">
-      <h2>Caisse</h2>
 
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h2>Caisse</h2>
+        <button class="secondary-btn" onclick="openPromoModal()">Activer promo</button>
+      </div>
+
+      <!-- LISTE PRODUITS -->
       <div id="products-list"></div>
 
       <!-- CLIENT -->
       <h3>Client</h3>
       <select id="client-select"></select>
-      <button onclick="openAddClientModal()" class="secondary-btn">+ Ajouter client</button>
+      <button class="secondary-btn" onclick="openAddClientModal()">+ Ajouter client</button>
 
       <!-- PAIEMENT -->
       <div class="payment-section">
@@ -71,35 +80,36 @@
       <div id="cart-list"></div>
 
       <p class="total-label">
-        <strong>Total :</strong>
-        <span id="cart-total">0</span> FCFA
+        <strong>Total :</strong> <span id="cart-total">0</span> FCFA
       </p>
 
-      <button onclick="confirmSale()" class="primary-btn">Valider la vente</button>
-      <button onclick="clearCart()" class="danger-btn">Annuler le panier</button>
+      <button class="primary-btn" onclick="confirmSale()">Valider la vente</button>
+      <button class="secondary-btn" id="print-ticket-btn" style="display:none;" onclick="openTicketPopup()">Imprimer le ticket</button>
+      <button class="danger-btn" onclick="clearCart()">Annuler le panier</button>
     </section>
 
-    <!-- =============== PRODUITS & STOCK =============== -->
+    <!-- ============================ PRODUITS ============================ -->
     <section id="view-produits" class="view hidden">
       <h2>Produits & Stock</h2>
+
       <table>
         <thead>
           <tr>
             <th>Nom</th>
             <th>Prix</th>
             <th>Stock</th>
-            <th>Modifier</th>
+            <th>Action</th>
           </tr>
         </thead>
         <tbody id="products-table-body"></tbody>
       </table>
     </section>
 
-    <!-- =============== CLIENTS =============== -->
+    <!-- ============================ CLIENTS ============================ -->
     <section id="view-clients" class="view hidden">
       <h2>Clients</h2>
 
-      <input id="client-search" type="text" placeholder="Rechercher..." oninput="renderClientsTable()">
+      <input id="client-search" placeholder="Rechercher..." oninput="renderClientsTable()">
 
       <table>
         <thead>
@@ -107,32 +117,46 @@
             <th>Nom</th>
             <th>Téléphone</th>
             <th>Total achats</th>
-            <th>Actions</th>
+            <th>Action</th>
           </tr>
         </thead>
         <tbody id="clients-table-body"></tbody>
       </table>
     </section>
 
-    <!-- =============== VENTES =============== -->
+    <!-- POPUP CLIENT DETAILS -->
+    <div id="popup-client" class="popup hidden">
+      <div class="popup-content">
+        <h3 id="popup-client-name"></h3>
+        <p>Téléphone : <span id="popup-client-phone"></span></p>
+
+        <h4>Historique des achats</h4>
+        <div id="popup-client-history"></div>
+
+        <button class="danger-btn" onclick="closeClientPopup()">Fermer</button>
+      </div>
+    </div>
+
+    <!-- ============================ VENTES ============================ -->
     <section id="view-ventes" class="view hidden">
       <h2>Ventes</h2>
 
       <div class="dashboard-filters">
-        <label>
-          Jour :
+        <label>Date :
           <input type="date" id="sales-date">
         </label>
-        <div>
-          <button class="secondary-btn" onclick="updateSalesViewForSelectedDate()">Voir les ventes</button>
-          <button class="secondary-btn" onclick="refreshSalesFromSheet()">Rafraîchir depuis Google Sheets</button>
-          <button class="primary-btn" onclick="openDailyReportForSelectedDate()">Télécharger rapport PDF</button>
-        </div>
+
+        <button class="secondary-btn" onclick="updateSalesViewForSelectedDate()">Voir</button>
+        <button class="secondary-btn" onclick="refreshSalesFromSheet()">Rafraîchir</button>
+        <button class="primary-btn" onclick="openDailyReportForSelectedDate()">Télécharger PDF</button>
       </div>
 
       <p class="total-label">
-        Total du jour :
-        <span id="today-total">0</span> FCFA
+        Total du jour : <span id="today-total">0</span> FCFA
+      </p>
+
+      <p id="sales-debug" style="font-size:12px;color:#6b7280;margin:4px 0;">
+        Ventes reçues depuis Google Sheets : ?
       </p>
 
       <p class="total-label">
@@ -145,27 +169,24 @@
         <thead>
           <tr>
             <th>Date / heure</th>
-            <th>Montant total</th>
+            <th>Montant</th>
           </tr>
         </thead>
         <tbody id="sales-table-body"></tbody>
       </table>
     </section>
 
-    <!-- =============== BAR À PARFUM =============== -->
+    <!-- ============================ BAR À PARFUM ============================ -->
     <section id="view-barparfum" class="view hidden">
       <h2>Bar à parfum</h2>
-      <p class="help-text">
-        Mise à jour manuelle des niveaux de stock, synchronisée avec Google Sheets (onglet "BarParfum").
-      </p>
 
       <p class="legend">
-        <span class="legend-full">1L ou plus</span>
+        <span class="legend-full">1L+</span>
         <span class="legend-half">0,5L</span>
         <span class="legend-out">Rupture</span>
       </p>
 
-      <table class="table-perfume">
+      <table>
         <thead>
           <tr>
             <th>Référence</th>
@@ -176,7 +197,7 @@
       </table>
     </section>
 
-    <!-- =============== TABLEAU DE BORD =============== -->
+    <!-- ============================ DASHBOARD ============================ -->
     <section id="view-dashboard" class="view hidden">
       <h2>Tableau de bord</h2>
 
@@ -189,7 +210,7 @@
           <input type="date" id="dashboard-end">
         </label>
 
-        <button onclick="loadDashboardStats()" class="secondary-btn">Actualiser</button>
+        <button class="secondary-btn" onclick="loadDashboardStats()">Actualiser</button>
 
         <div class="dashboard-quick">
           <button class="secondary-btn" onclick="setDashboardRangeToday()">Aujourd’hui</button>
@@ -198,6 +219,8 @@
           <button class="secondary-btn" onclick="setDashboardRangeYear()">Cette année</button>
         </div>
       </div>
+
+      <canvas id="dashboard-chart" height="180"></canvas>
 
       <div class="dashboard-summary">
         <div class="card"><div class="label">CA Total</div><div class="value" id="db-total">0</div></div>
@@ -212,6 +235,41 @@
 
   </div>
 
+  <!-- ============================ POPUP TICKET ============================ -->
+  <div id="ticket-popup" class="popup hidden">
+    <div class="popup-content ticket-box" id="ticket-content">
+      <!-- Le ticket sera généré ici -->
+    </div>
+    <button class="danger-btn" onclick="closeTicketPopup()">Fermer</button>
+  </div>
+
+  <!-- ============================ POPUP PROMO ============================ -->
+  <div id="promo-popup" class="popup hidden">
+    <div class="popup-content">
+      <h3>Mode Promo</h3>
+
+      <label>Prix promo produits 8000 :
+        <input type="number" id="promo-8000" value="8000">
+      </label>
+
+      <label>Prix promo produits 5000 :
+        <input type="number" id="promo-5000" value="5000">
+      </label>
+
+      <label>Date début :
+        <input type="date" id="promo-start">
+      </label>
+
+      <label>Date fin :
+        <input type="date" id="promo-end">
+      </label>
+
+      <button class="primary-btn" onclick="savePromo()">Activer</button>
+      <button class="danger-btn" onclick="closePromoPopup()">Annuler</button>
+    </div>
+  </div>
+
   <script src="app.js"></script>
+
 </body>
 </html>
