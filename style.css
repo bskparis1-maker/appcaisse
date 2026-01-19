@@ -11,6 +11,10 @@ body {
   color: #111827;
 }
 
+.hidden {
+  display: none !important;
+}
+
 /* ============ CONTENEUR PRINCIPAL ============ */
 .app-container {
   max-width: 960px;

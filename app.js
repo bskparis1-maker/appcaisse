@@ -68,6 +68,10 @@ let sales = loadSales();
 let clients = loadClients();
 let cart = [];    // [{ productId, qty }]
 let perfumes = []; // [{ name, level }]
+let dashboardChart = null;
+let lastTicketSale = null; // dernière vente pour le bouton "Imprimer le ticket"
+let stockHistory = [];
+let expenses = [];
 
 // ================== STOCK <-> SHEETS ==================
 function fetchStockFromSheet() {
@@ -309,18 +313,95 @@ function showView(viewName) {
   }
 }
 
-// ================== PRODUITS (CAISSE) ==================
+// ================== CAISSE ==================
+
+// -------- PROMO --------
+
+function getCurrentPromo() {
+  try {
+    return JSON.parse(localStorage.getItem("promo") || "{}");
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveCurrentPromo(promo) {
+  localStorage.setItem("promo", JSON.stringify(promo));
+}
+
+function getPromoPrice(basePrice) {
+  const promo = getCurrentPromo();
+  if (!promo.start || !promo.end) return basePrice;
+
+  const now = new Date();
+  const start = new Date(promo.start + "T00:00:00");
+  const end = new Date(promo.end + "T23:59:59");
+
+  if (now < start || now > end) return basePrice;
+
+  if (basePrice === 8000) return promo.new8000 || basePrice;
+  if (basePrice === 5000) return promo.new5000 || basePrice;
+
+  return basePrice;
+}
+
+function openPromoModal() {
+  const popup = document.getElementById("promo-popup");
+  if (!popup) return;
+
+  const promo = getCurrentPromo();
+  document.getElementById("promo-8000").value = promo.new8000 || 8000;
+  document.getElementById("promo-5000").value = promo.new5000 || 5000;
+  document.getElementById("promo-start").value = promo.start || "";
+  document.getElementById("promo-end").value = promo.end || "";
+
+  popup.classList.remove("hidden");
+}
+
+function closePromoPopup() {
+  const popup = document.getElementById("promo-popup");
+  if (!popup) return;
+  popup.classList.add("hidden");
+}
+
+function savePromo() {
+  const p8000 = Number(document.getElementById("promo-8000").value) || 8000;
+  const p5000 = Number(document.getElementById("promo-5000").value) || 5000;
+  const start = document.getElementById("promo-start").value;
+  const end   = document.getElementById("promo-end").value;
+
+  if (!start || !end) {
+    alert("Merci de définir une date de début et une date de fin.");
+    return;
+  }
+
+  saveCurrentPromo({
+    start,
+    end,
+    new8000: p8000,
+    new5000: p5000
+  });
+
+  alert("Promo enregistrée.");
+  closePromoPopup();
+  renderProductsForSale();
+}
+
+// -------- PRODUITS (AFFICHAGE CAISSE) --------
+
 function renderProductsForSale() {
   const container = document.getElementById("products-list");
   if (!container) return;
   container.innerHTML = "";
 
   products.forEach(p => {
+    const promoPrice = getPromoPrice(p.price);
+
     const div = document.createElement("div");
     div.className = "product-card";
     div.innerHTML = `
       <strong>${p.name}</strong><br>
-      Prix : ${p.price} FCFA<br>
+      Prix : ${promoPrice} FCFA<br>
       Stock : ${p.stock}<br>
       <label>Quantité :
         <input type="number" min="1" value="1" id="qty-${p.id}">
@@ -331,53 +412,102 @@ function renderProductsForSale() {
   });
 }
 
+// -------- PANIER --------
+
 function addToCart(productId) {
   const product = products.find(p => p.id === productId);
-  if (!product) return;
+  if (!product) {
+    alert("Produit introuvable.");
+    return;
+  }
 
   const qtyInput = document.getElementById(`qty-${productId}`);
-  const qty = parseInt(qtyInput.value, 10) || 1;
+  const qty = parseInt(qtyInput?.value, 10) || 1;
   if (qty <= 0) return;
 
-  if (qty > product.stock) {
+  // Quantité déjà dans le panier
+  const alreadyInCart = cart
+    .filter(item => item.productId === productId)
+    .reduce((sum, item) => sum + item.qty, 0);
+
+  if (alreadyInCart + qty > product.stock) {
     alert("Stock insuffisant !");
     return;
   }
 
-  const existing = cart.find(i => i.productId === productId);
-  if (existing) {
-    if (existing.qty + qty > product.stock) {
-      alert("Stock insuffisant !");
+  const wholesaleMode = document.getElementById("wholesale-mode")?.checked;
+
+  let unitPrice = getPromoPrice(product.price);
+  let wholesale = false;
+
+  if (wholesaleMode) {
+    // on demande le prix unitaire pour cette vente
+    const custom = Number(
+      prompt(`Prix unitaire (gros) pour ${product.name} (FCFA) :`)
+    );
+    if (!custom || custom <= 0) {
       return;
     }
+    unitPrice = custom;
+    wholesale = true;
+  }
+
+  const existing = cart.find(
+    item =>
+      item.productId === productId &&
+      item.price === unitPrice &&
+      item.wholesale === wholesale
+  );
+
+  if (existing && !wholesale) {
+    // on cumule uniquement en mode normal
     existing.qty += qty;
   } else {
-    cart.push({ productId, qty });
+    cart.push({
+      productId: product.id,
+      name: product.name,
+      basePrice: product.price, // prix catalogue
+      price: unitPrice,         // prix utilisé (modifiable si wholesale)
+      qty,
+      wholesale
+    });
   }
 
   renderCart();
 }
 
-// ================== CALCUL TOTAL PANIER ==================
 function calculateCartTotals() {
+  const wholesaleMode = document.getElementById("wholesale-mode")?.checked;
+
   let baseTotal = 0;
   let promoEligibleQty = 0;
 
   cart.forEach(item => {
-    const product = products.find(p => p.id === item.productId);
-    if (!product) return;
-    baseTotal += product.price * item.qty;
-    if (product.price === 8000) {
+    baseTotal += item.price * item.qty;
+
+    if (!wholesaleMode && !item.wholesale && item.basePrice === 8000) {
       promoEligibleQty += item.qty;
     }
   });
 
-  const promoDiscount = Math.floor(promoEligibleQty / 2) * 1000;
+  let promoDiscount = 0;
+  if (!wholesaleMode) {
+    promoDiscount = Math.floor(promoEligibleQty / 2) * 1000;
+  }
 
   const discountInput = document.getElementById("cart-discount");
-  const manualDiscount = discountInput
-    ? Math.max(0, parseInt(discountInput.value, 10) || 0)
-    : 0;
+  let manualDiscount = 0;
+
+  if (discountInput) {
+    if (wholesaleMode) {
+      // en gros → remise désactivée
+      discountInput.disabled = true;
+      discountInput.value = "0";
+    } else {
+      discountInput.disabled = false;
+      manualDiscount = Math.max(0, parseInt(discountInput.value, 10) || 0);
+    }
+  }
 
   let finalTotal = baseTotal - promoDiscount - manualDiscount;
   if (finalTotal < 0) finalTotal = 0;
@@ -390,7 +520,6 @@ function calculateCartTotals() {
   };
 }
 
-// ================== PANIER ==================
 function renderCart() {
   const container = document.getElementById("cart-list");
   const totalSpan = document.getElementById("cart-total");
@@ -398,12 +527,30 @@ function renderCart() {
 
   container.innerHTML = "";
 
-  cart.forEach(item => {
-    const product = products.find(p => p.id === item.productId);
-    if (!product) return;
-    const lineTotal = product.price * item.qty;
+  if (cart.length === 0) {
+    container.textContent = "Panier vide.";
+    totalSpan.textContent = "0";
+    return;
+  }
+
+  cart.forEach((item, index) => {
+    const labelGros = item.wholesale ? " (gros)" : "";
+
+    // si article en gros → prix modifiable dans le panier
+    const priceField = item.wholesale
+      ? `<input type="number" min="0" value="${item.price}"
+            onchange="updateCartItemPrice(${index}, this.value)"
+            style="width:80px;"> FCFA`
+      : `${item.price} FCFA`;
+
+    const lineTotal = item.price * item.qty;
+
     const div = document.createElement("div");
-    div.textContent = `${product.name} x ${item.qty} = ${lineTotal} FCFA`;
+    div.innerHTML = `
+      ${item.name}${labelGros} - ${priceField} × ${item.qty}
+      = ${lineTotal} FCFA
+      <button class="secondary-btn" onclick="removeCartItem(${index})">X</button>
+    `;
     container.appendChild(div);
   });
 
@@ -411,13 +558,50 @@ function renderCart() {
   totalSpan.textContent = totals.finalTotal;
 }
 
+function updateCartItemPrice(index, newPrice) {
+  const price = Number(newPrice);
+  if (isNaN(price) || price < 0) return;
+  if (!cart[index]) return;
+  cart[index].price = price;
+  renderCart();
+}
+
+function removeCartItem(index) {
+  cart.splice(index, 1);
+  renderCart();
+}
+
 function clearCart() {
   cart = [];
   const discountInput = document.getElementById("cart-discount");
   const discountReasonInput = document.getElementById("cart-discount-reason");
-  if (discountInput) discountInput.value = "0";
+  if (discountInput) {
+    discountInput.disabled = false;
+    discountInput.value = "0";
+  }
   if (discountReasonInput) discountReasonInput.value = "";
   renderCart();
+}
+
+function printTicket() {
+  let saleToPrint = null;
+
+  // 1) Priorité : la dernière vente enregistrée dans lastTicketSale
+  if (typeof lastTicketSale !== "undefined" && lastTicketSale) {
+    saleToPrint = lastTicketSale;
+  }
+
+  // 2) Si jamais lastTicketSale est vide, on prend la dernière vente du tableau sales
+  if ((!saleToPrint || !saleToPrint.items) && Array.isArray(sales) && sales.length > 0) {
+    saleToPrint = sales[sales.length - 1];
+  }
+
+  if (!saleToPrint) {
+    alert("Aucune vente à imprimer.");
+    return;
+  }
+
+  openReceiptWindow(saleToPrint);
 }
 
 // ================== CLIENTS EN CAISSE ==================
@@ -488,7 +672,7 @@ function confirmSale() {
     return;
   }
 
-  // Vérifier stock
+  // 1) Vérifier le stock
   for (const item of cart) {
     const product = products.find(p => p.id === item.productId);
     if (!product) {
@@ -501,24 +685,29 @@ function confirmSale() {
     }
   }
 
-  // Soustraire du stock
+  // 2) Soustraire du stock
   cart.forEach(item => {
     const product = products.find(p => p.id === item.productId);
     if (product) {
-      product.stock -= item.qty;
+      product.stock = Math.max(0, product.stock - item.qty);
     }
   });
   saveProducts(products);
-  sendStockToSheet(products);
+  if (typeof sendStockToSheet === "function") {
+    sendStockToSheet(products);
+  }
 
-  // Totaux
+  // 3) Totaux (promo + remise manuelle)
   const totals = calculateCartTotals();
 
   // Mode de paiement
   const methodSelect = document.getElementById("payment-method");
   const paymentMethod = methodSelect ? methodSelect.value : "cash";
 
-  // Client & fidélité
+  // Vente en gros ?
+  const wholesaleMode = document.getElementById("wholesale-mode")?.checked;
+
+  // 4) Client & fidélité
   const select = document.getElementById("client-select");
   let clientId = null;
   let clientName = "";
@@ -526,7 +715,8 @@ function confirmSale() {
   let loyaltyDiscount = 0;
   let loyaltyReasonText = "";
 
-  if (select && select.value) {
+  if (select && select.value && !wholesaleMode) {
+    // En mode GROS : pas de remise fidélité
     clientId = Number(select.value);
     const client = clients.find(c => c.id === clientId);
     if (client) {
@@ -551,13 +741,22 @@ function confirmSale() {
     }
   }
 
-  const finalTotal = Math.max(0, totals.finalTotal - loyaltyDiscount);
-
+  // 5) Remise totale + raison
   const discountReasonInput = document.getElementById("cart-discount-reason");
   const userReason = discountReasonInput ? discountReasonInput.value.trim() : "";
 
+  let promoDiscount = totals.promoDiscount || 0;
+  let manualDiscount = totals.manualDiscount || 0;
+
+  if (wholesaleMode) {
+    // En gros : pas de remises
+    promoDiscount = 0;
+    manualDiscount = 0;
+    loyaltyDiscount = 0;
+  }
+
   let fullDiscountReason = userReason;
-  if (totals.promoDiscount > 0) {
+  if (promoDiscount > 0) {
     if (fullDiscountReason) fullDiscountReason += " + ";
     fullDiscountReason += "promo 2x8000";
   }
@@ -565,33 +764,51 @@ function confirmSale() {
     if (fullDiscountReason) fullDiscountReason += " + ";
     fullDiscountReason += loyaltyReasonText;
   }
+  if (wholesaleMode) {
+    if (fullDiscountReason) fullDiscountReason += " + ";
+    fullDiscountReason += "vente en gros";
+  }
 
+  const baseTotal = totals.baseTotal;
+  const totalDiscount = promoDiscount + manualDiscount + loyaltyDiscount;
+  const finalTotal = Math.max(0, baseTotal - totalDiscount);
+
+  // 6) Construire l'objet vente (avec prix pour le ticket)
   const sale = {
     id: Date.now(),
     date: new Date().toISOString(),
-    baseTotal: totals.baseTotal,
+    baseTotal: baseTotal,
     total: finalTotal,
     items: cart.map(item => {
       const product = products.find(p => p.id === item.productId);
+      const unitPrice =
+        item.price != null
+          ? item.price
+          : product
+          ? product.price
+          : 0;
       return {
         productId: item.productId,
-        name: product ? product.name : "",
-        qty: item.qty
+        name: product ? product.name : (item.name || ""),
+        qty: item.qty,
+        price: unitPrice,
+        lineTotal: unitPrice * item.qty
       };
     }),
     paymentMethod,
-    promoDiscount: totals.promoDiscount,
-    manualDiscount: totals.manualDiscount,
+    promoDiscount,
+    manualDiscount,
     loyaltyDiscount,
-    discountAmount: totals.promoDiscount + totals.manualDiscount + loyaltyDiscount,
+    discountAmount: totalDiscount,
     discountReason: fullDiscountReason,
     clientId,
     clientName,
-    clientPhone
+    clientPhone,
+    wholesale: wholesaleMode ? true : false
   };
 
-  // Mise à jour client local
-  if (clientId) {
+  // 7) Mise à jour client local (si pas vente en gros)
+  if (clientId && !wholesaleMode) {
     const client = clients.find(c => c.id === clientId);
     if (client) {
       let totalSpent = 0;
@@ -608,15 +825,19 @@ function confirmSale() {
     }
   }
 
+  // 8) Sauvegarde + envoi à Sheets
   sales.push(sale);
   saveSales(sales);
-  sendSaleToSheet(sale);
+  if (typeof sendSaleToSheet === "function") {
+    sendSaleToSheet(sale);
+  }
 
-  openReceiptWindow(sale);
+  // 9) Préparer le ticket pour le bouton "Imprimer le ticket"
+  lastTicketSale = sale;   // 👈 utilisé par printTicket()
+
+  // 10) Nettoyage
   clearCart();
   renderProductsForSale();
-
-  // maj vue ventes pour la date sélectionnée (en général aujourd'hui)
   updateSalesViewForSelectedDate();
 
   alert("Vente enregistrée !");
@@ -631,7 +852,9 @@ function openReceiptWindow(sale) {
   sale.items.forEach(item => {
     const product = products.find(p => p.id === item.productId);
     const name = item.name || (product ? product.name : "");
-    const unitPrice = product ? product.price : 0;
+    const unitPrice = item.price != null
+      ? item.price
+      : (product ? product.price : 0);
     const lineTotal = unitPrice * item.qty;
 
     rowsHtml += `
@@ -833,62 +1056,590 @@ function openReceiptWindow(sale) {
   win.document.close();
 }
 
-// ================== PRODUITS / STOCK (ONGLET PRODUITS) ==================
+// ================== BOUTON "IMPRIMER LE TICKET" ==================
+function printTicket() {
+  // On utilise d'abord lastTicketSale, sinon la dernière vente du tableau sales
+  let saleToPrint = null;
+
+  if (lastTicketSale) {
+    saleToPrint = lastTicketSale;
+  } else if (Array.isArray(sales) && sales.length > 0) {
+    saleToPrint = sales[sales.length - 1];
+  }
+
+  if (!saleToPrint) {
+    alert("Aucune vente à imprimer.");
+    return;
+  }
+
+  openReceiptWindow(saleToPrint);
+}
+// ================== PRODUITS & STOCK ==================
+
+// Rendu de la table des produits (onglet "Produits & Stock")
 function renderProductsTable() {
   const tbody = document.getElementById("products-table-body");
   if (!tbody) return;
+
   tbody.innerHTML = "";
+
+  if (!Array.isArray(products) || products.length === 0) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="5">Aucun produit.</td>`;
+    tbody.appendChild(tr);
+    return;
+  }
 
   products.forEach(p => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${p.name}</td>
-      <td>${p.price} FCFA</td>
-      <td>${p.stock}</td>
+      <td>${p.price || 0} FCFA</td>
+      <td>${p.stock || 0}</td>
       <td>
-        <input type="number" id="new-stock-${p.id}" value="${p.stock}">
-        <button onclick="updateStock(${p.id})">Sauver</button>
+        <input
+          type="number"
+          id="stock-input-${p.id}"
+          value="${p.stock || 0}"
+          min="0"
+        />
+      </td>
+      <td>
+        <button onclick="updateProductStock(${p.id})">Mettre à jour</button>
       </td>
     `;
     tbody.appendChild(tr);
   });
 }
 
-function updateStock(productId) {
-  const input = document.getElementById(`new-stock-${productId}`);
-  const newStock = parseInt(input.value, 10);
-  if (isNaN(newStock) || newStock < 0) {
-    alert("Stock invalide.");
+// Modification manuelle du stock d'un produit
+function updateProductStock(productId) {
+  const product = products.find(p => p.id === productId);
+  if (!product) {
+    alert("Produit introuvable.");
     return;
   }
 
-  const product = products.find(p => p.id === productId);
-  if (!product) return;
+  const input = document.getElementById(`stock-input-${productId}`);
+  if (!input) return;
 
+  const newStock = parseInt(input.value, 10);
+  if (isNaN(newStock) || newStock < 0) {
+    alert("Stock invalide.");
+    input.value = product.stock || 0;
+    return;
+  }
+
+  const oldStock = product.stock || 0;
+  if (newStock === oldStock) {
+    alert("Le stock n'a pas changé.");
+    return;
+  }
+
+  // 🔥 Motif obligatoire
+  const reason = prompt("Motif de modification du stock :");
+  if (!reason || !reason.trim()) {
+    alert("Le motif est obligatoire.");
+    input.value = oldStock;
+    return;
+  }
+
+  // Mise à jour locale
   product.stock = newStock;
   saveProducts(products);
   renderProductsTable();
-  renderProductsForSale();
-  sendStockToSheet(products);
-  alert("Stock mis à jour.");
+
+  // Envoi du stock complet vers Google Sheets (updateStock)
+  sendStockToSheetWithFallback(products);
+
+  // Historique : construire l'entrée
+  const change = {
+    date: new Date().toISOString(),
+    productId: product.id,
+    productName: product.name,
+    oldStock,
+    newStock,
+    delta: newStock - oldStock,
+    reason: reason.trim()
+  };
+
+  // Envoi dans l'historique Sheets
+  logStockChangeToSheet(change);
+
+  // Ajouter aussi localement & rafraîchir l'affichage
+  if (!Array.isArray(stockHistory)) stockHistory = [];
+  stockHistory.push(change);
+  renderStockHistoryTable();
+}
+
+// Envoi du stock vers Sheets (action=updateStock)
+function sendStockToSheetWithFallback(productsList) {
+  // Si tu as déjà une fonction sendStockToSheet, on l'utilise
+  if (typeof sendStockToSheet === "function") {
+    sendStockToSheet(productsList);
+    return;
+  }
+
+  // Sinon on fait un fallback direct
+  const payload = JSON.stringify({ products: productsList });
+  const url = `${SHEET_URL}?action=updateStock&payload=${encodeURIComponent(payload)}`;
+
+  fetch(url)
+    .then(r => r.text())
+    .then(txt => {
+      console.log("updateStock ->", txt);
+    })
+    .catch(err => {
+      console.error("updateStock error:", err);
+    });
+}
+
+// Envoi d'un mouvement de stock vers Sheets (logStockChange)
+function logStockChangeToSheet(change) {
+  const payload = JSON.stringify({ change });
+  const url = `${SHEET_URL}?action=logStockChange&payload=${encodeURIComponent(payload)}`;
+
+  fetch(url)
+    .then(r => r.text())
+    .then(txt => {
+      console.log("logStockChange ->", txt);
+    })
+    .catch(err => {
+      console.error("logStockChange error:", err);
+    });
+}
+
+// Lecture de l'historique depuis Sheets
+function fetchStockHistoryFromSheet() {
+  const callbackName = "onStockHistory_" + Date.now();
+  const script = document.createElement("script");
+
+  window[callbackName] = function (data) {
+    try {
+      if (data && Array.isArray(data.history)) {
+        stockHistory = data.history.map(h => {
+          const oldStock = Number(h.oldStock) || 0;
+          const newStock = Number(h.newStock) || 0;
+          const delta =
+            typeof h.delta !== "undefined"
+              ? Number(h.delta) || 0
+              : newStock - oldStock;
+
+          return {
+            date: h.date,
+            productId: h.productId,
+            productName: h.productName,
+            oldStock,
+            newStock,
+            delta,
+            reason: h.reason || ""
+          };
+        });
+      } else {
+        stockHistory = [];
+      }
+      renderStockHistoryTable();
+    } finally {
+      delete window[callbackName];
+      script.remove();
+    }
+  };
+
+  script.src = `${SHEET_URL}?action=getStockHistory&callback=${callbackName}`;
+  script.onerror = function () {
+    console.warn("Erreur chargement historique de stock.");
+  };
+
+  document.body.appendChild(script);
+}
+
+// Affichage de l'historique dans le tableau
+function renderStockHistoryTable() {
+  const tbody = document.getElementById("stock-history-body");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+
+  if (!Array.isArray(stockHistory) || stockHistory.length === 0) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="6">Aucun mouvement de stock enregistré.</td>`;
+    tbody.appendChild(tr);
+    return;
+  }
+
+  const startInput = document.getElementById("stock-history-start");
+  const endInput = document.getElementById("stock-history-end");
+
+  let start = null;
+  let end = null;
+
+  if (startInput && startInput.value) {
+    start = new Date(startInput.value + "T00:00:00");
+  }
+  if (endInput && endInput.value) {
+    end = new Date(endInput.value + "T23:59:59");
+  }
+
+  // Derniers mouvements en premier
+  const sorted = [...stockHistory].sort((a, b) => {
+    const da = new Date(a.date).getTime();
+    const db = new Date(b.date).getTime();
+    return db - da;
+  });
+
+  const filtered = sorted.filter(entry => {
+    const d = new Date(entry.date);
+    if (isNaN(d.getTime())) {
+      // si la date est invalide et qu'il y a un filtre, on l'ignore
+      if (start || end) return false;
+      return true;
+    }
+    if (start && d < start) return false;
+    if (end && d > end) return false;
+    return true;
+  }).slice(0, 300); // limite à 300 lignes max
+
+  if (filtered.length === 0) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="6">Aucun mouvement pour cette période.</td>`;
+    tbody.appendChild(tr);
+    return;
+  }
+
+  filtered.forEach(entry => {
+    const d = new Date(entry.date);
+    const dateStr = isNaN(d.getTime())
+      ? entry.date
+      : d.toLocaleString("fr-FR");
+
+    const deltaSign = entry.delta > 0 ? "+" : "";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${dateStr}</td>
+      <td>${entry.productName || ""}</td>
+      <td>${entry.oldStock}</td>
+      <td>${entry.newStock}</td>
+      <td>${deltaSign}${entry.delta}</td>
+      <td>${entry.reason || ""}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+function setStockHistoryRangeToday() {
+  const startInput = document.getElementById("stock-history-start");
+  const endInput = document.getElementById("stock-history-end");
+  if (!startInput || !endInput) return;
+
+  const today = new Date();
+  const iso = today.toISOString().slice(0, 10);
+  startInput.value = iso;
+  endInput.value = iso;
+
+  renderStockHistoryTable();
+}
+
+function setStockHistoryRangeWeek() {
+  const startInput = document.getElementById("stock-history-start");
+  const endInput = document.getElementById("stock-history-end");
+  if (!startInput || !endInput) return;
+
+  const today = new Date();
+  const day = today.getDay(); // 0=dimanche, 1=lundi, ...
+  const diffToMonday = (day + 6) % 7;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - diffToMonday);
+
+  startInput.value = monday.toISOString().slice(0, 10);
+  endInput.value = today.toISOString().slice(0, 10);
+
+  renderStockHistoryTable();
+}
+
+function setStockHistoryRangeMonth() {
+  const startInput = document.getElementById("stock-history-start");
+  const endInput = document.getElementById("stock-history-end");
+  if (!startInput || !endInput) return;
+
+  const today = new Date();
+  const first = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  startInput.value = first.toISOString().slice(0, 10);
+  endInput.value = today.toISOString().slice(0, 10);
+
+  renderStockHistoryTable();
+}
+
+function setStockHistoryRangeYear() {
+  const startInput = document.getElementById("stock-history-start");
+  const endInput = document.getElementById("stock-history-end");
+  if (!startInput || !endInput) return;
+
+  const today = new Date();
+  const first = new Date(today.getFullYear(), 0, 1);
+
+  startInput.value = first.toISOString().slice(0, 10);
+  endInput.value = today.toISOString().slice(0, 10);
+
+  renderStockHistoryTable();
+}
+// ================== FRAIS ==================
+
+// Ajout d'une dépense
+function addExpense() {
+  const labelInput = document.getElementById("expense-label");
+  const amountInput = document.getElementById("expense-amount");
+  if (!labelInput || !amountInput) return;
+
+  const label = (labelInput.value || "").trim();
+  const amount = Number(amountInput.value) || 0;
+
+  if (!label) {
+    alert("Merci de renseigner le motif de la dépense.");
+    return;
+  }
+  if (amount <= 0) {
+    alert("Merci de renseigner un montant valide.");
+    return;
+  }
+
+  const nowIso = new Date().toISOString();
+
+  const expense = {
+    id: Date.now(),
+    date: nowIso,
+    label,
+    amount
+  };
+
+  if (!Array.isArray(expenses)) expenses = [];
+  expenses.push(expense);
+
+  // Sauvegarde locale (optionnel mais pratique)
+  saveExpenses(expenses);
+
+  // Envoi à Google Sheets
+  sendExpenseToSheet(expense);
+
+  // Nettoyage des champs
+  labelInput.value = "";
+  amountInput.value = "";
+
+  renderExpensesTable();
+
+  alert("Dépense enregistrée.");
+}
+
+// Sauvegarde locale dans localStorage
+function saveExpenses(list) {
+  try {
+    localStorage.setItem("bsk_expenses", JSON.stringify(list || []));
+  } catch (e) {
+    console.warn("Impossible de sauvegarder les frais en local", e);
+  }
+}
+
+// Lecture locale (optionnel si Sheets ne répond pas)
+function loadExpensesFromLocal() {
+  try {
+    const raw = localStorage.getItem("bsk_expenses");
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch (e) {
+    return [];
+  }
+}
+
+// Envoi d'une dépense vers Google Sheets
+function sendExpenseToSheet(expense) {
+  const payload = JSON.stringify({ expense });
+  const url = `${SHEET_URL}?action=addExpense&payload=${encodeURIComponent(payload)}`;
+
+  fetch(url)
+    .then(r => r.text())
+    .then(txt => {
+      console.log("addExpense ->", txt);
+    })
+    .catch(err => {
+      console.error("addExpense error:", err);
+    });
+}
+
+// Récupération des dépenses depuis Google Sheets
+function fetchExpensesFromSheet() {
+  const callbackName = "onExpensesFromSheet_" + Date.now();
+  const script = document.createElement("script");
+
+  window[callbackName] = function (data) {
+    try {
+      if (data && Array.isArray(data.expenses)) {
+        expenses = data.expenses.map(e => ({
+          id: e.id || Date.now(),
+          date: e.date,
+          label: e.label || "",
+          amount: Number(e.amount) || 0
+        }));
+        saveExpenses(expenses);
+      } else {
+        // si rien depuis Sheets, on peut retomber sur le localStorage
+        expenses = loadExpensesFromLocal();
+      }
+      renderExpensesTable();
+    } finally {
+      delete window[callbackName];
+      script.remove();
+    }
+  };
+
+  script.src = `${SHEET_URL}?action=getExpenses&callback=${callbackName}`;
+  script.onerror = function () {
+    console.warn("Erreur chargement frais depuis Google Sheets.");
+    expenses = loadExpensesFromLocal();
+    renderExpensesTable();
+  };
+
+  document.body.appendChild(script);
+}
+
+// Affichage filtré de l'historique des frais
+function renderExpensesTable() {
+  const tbody = document.getElementById("expense-history-body");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+
+  if (!Array.isArray(expenses) || expenses.length === 0) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="3">Aucune dépense enregistrée.</td>`;
+    tbody.appendChild(tr);
+    return;
+  }
+
+  const startInput = document.getElementById("expense-history-start");
+  const endInput = document.getElementById("expense-history-end");
+
+  let start = null;
+  let end = null;
+
+  if (startInput && startInput.value) {
+    start = new Date(startInput.value + "T00:00:00");
+  }
+  if (endInput && endInput.value) {
+    end = new Date(endInput.value + "T23:59:59");
+  }
+
+  const sorted = [...expenses].sort((a, b) => {
+    const da = new Date(a.date).getTime();
+    const db = new Date(b.date).getTime();
+    return db - da;
+  });
+
+  const filtered = sorted.filter(entry => {
+    const d = new Date(entry.date);
+    if (isNaN(d.getTime())) {
+      if (start || end) return false;
+      return true;
+    }
+    if (start && d < start) return false;
+    if (end && d > end) return false;
+    return true;
+  }).slice(0, 300);
+
+  if (filtered.length === 0) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="3">Aucune dépense pour cette période.</td>`;
+    tbody.appendChild(tr);
+    return;
+  }
+
+  filtered.forEach(e => {
+    const d = new Date(e.date);
+    const dateStr = isNaN(d.getTime())
+      ? e.date
+      : d.toLocaleString("fr-FR");
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${dateStr}</td>
+      <td>${e.label}</td>
+      <td>${e.amount} FCFA</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// Raccourcis de filtre : aujourd'hui / semaine / mois / année
+function setExpenseHistoryRangeToday() {
+  const startInput = document.getElementById("expense-history-start");
+  const endInput = document.getElementById("expense-history-end");
+  if (!startInput || !endInput) return;
+
+  const today = new Date();
+  const iso = today.toISOString().slice(0, 10);
+  startInput.value = iso;
+  endInput.value = iso;
+
+  renderExpensesTable();
+}
+
+function setExpenseHistoryRangeWeek() {
+  const startInput = document.getElementById("expense-history-start");
+  const endInput = document.getElementById("expense-history-end");
+  if (!startInput || !endInput) return;
+
+  const today = new Date();
+  const day = today.getDay(); // 0=dimanche, 1=lundi, ...
+  const diffToMonday = (day + 6) % 7;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - diffToMonday);
+
+  startInput.value = monday.toISOString().slice(0, 10);
+  endInput.value = today.toISOString().slice(0, 10);
+
+  renderExpensesTable();
+}
+
+function setExpenseHistoryRangeMonth() {
+  const startInput = document.getElementById("expense-history-start");
+  const endInput = document.getElementById("expense-history-end");
+  if (!startInput || !endInput) return;
+
+  const today = new Date();
+  const first = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  startInput.value = first.toISOString().slice(0, 10);
+  endInput.value = today.toISOString().slice(0, 10);
+
+  renderExpensesTable();
+}
+
+function setExpenseHistoryRangeYear() {
+  const startInput = document.getElementById("expense-history-start");
+  const endInput = document.getElementById("expense-history-end");
+  if (!startInput || !endInput) return;
+
+  const today = new Date();
+  const first = new Date(today.getFullYear(), 0, 1);
+
+  startInput.value = first.toISOString().slice(0, 10);
+  endInput.value = today.toISOString().slice(0, 10);
+
+  renderExpensesTable();
 }
 
 // ================== CLIENTS (ONGLET CLIENTS) ==================
 function renderClientsTable() {
   const tbody = document.getElementById("clients-table-body");
   if (!tbody) return;
-  tbody.innerHTML = "";
 
   const searchInput = document.getElementById("client-search");
   const term = searchInput ? searchInput.value.trim().toLowerCase() : "";
 
-  let list = clients;
-  if (term) {
-    list = clients.filter(c =>
-      c.name.toLowerCase().includes(term) ||
-      (c.phone || "").toLowerCase().includes(term)
-    );
-  }
+  tbody.innerHTML = "";
+
+  const list = clients.filter(c =>
+    c.name.toLowerCase().includes(term) ||
+    (c.phone || "").toLowerCase().includes(term)
+  );
 
   if (list.length === 0) {
     const tr = document.createElement("tr");
@@ -898,130 +1649,209 @@ function renderClientsTable() {
   }
 
   list.forEach(c => {
-    let totalSpent = c.totalSpent || 0;
-    if (!totalSpent) {
-      sales.forEach(s => {
-        if (s.clientId === c.id) totalSpent += s.total || 0;
-      });
-      c.totalSpent = totalSpent;
-    }
+    const totalSpent = computeClientTotal(c.id);
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${c.name}</td>
       <td>${c.phone || ""}</td>
-      <td>${c.totalSpent || 0} FCFA</td>
-      <td><button onclick="alertClientInfo(${c.id})">Détails</button></td>
+      <td>${totalSpent} FCFA</td>
+      <td>
+        <button class="secondary-btn" onclick="openClientPopup('${c.id}')">
+          Détails
+        </button>
+      </td>
     `;
     tbody.appendChild(tr);
   });
-
-  saveClients(clients);
 }
+function computeClientTotal(clientId) {
+  let sum = 0;
 
-function alertClientInfo(clientId) {
-  const client = clients.find(c => c.id === clientId);
-  if (!client) return;
+  sales.forEach(s => {
+    if (s.clientId == clientId) { // == pour accepter string ou nombre
+      sum += Number(s.total) || 0;
+    }
+  });
 
-  let totalSpent = client.totalSpent || 0;
-  if (!totalSpent) {
-    sales.forEach(s => {
-      if (s.clientId === clientId) totalSpent += s.total || 0;
+  return sum;
+}
+function openClientPopup(clientId) {
+  const c = clients.find(c => c.id == clientId);
+  if (!c) return;
+
+  // Nom & téléphone
+  document.getElementById("popup-client-name").textContent = c.name;
+  document.getElementById("popup-client-phone").textContent = c.phone || "—";
+
+  const historyDiv = document.getElementById("popup-client-history");
+  historyDiv.innerHTML = "";
+
+  // Toutes les ventes de ce client, triées de la plus récente à la plus ancienne
+  const historySales = sales
+    .filter(s => s.clientId == clientId)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  if (historySales.length === 0) {
+    historyDiv.textContent = "Aucun achat pour ce client.";
+  } else {
+    historySales.forEach(s => {
+      const div = document.createElement("div");
+      div.style.marginBottom = "10px";
+
+      const dateStr = new Date(s.date).toLocaleString();
+
+      div.innerHTML = `
+        <div><strong>${dateStr}</strong></div>
+        <div>Montant : ${s.total} FCFA</div>
+        <div>Paiement : ${s.paymentMethod || "-"}</div>
+        ${
+          s.discountAmount > 0
+            ? `<div>Remise : -${s.discountAmount} FCFA (${s.discountReason || "—"})</div>`
+            : ""
+        }
+        <div>Produits :</div>
+        <ul>
+          ${
+            (s.items || [])
+              .map(i => `<li>${i.name} × ${i.qty}</li>`)
+              .join("")
+          }
+        </ul>
+        <hr>
+      `;
+      historyDiv.appendChild(div);
     });
   }
 
-  alert(
-    `Client : ${client.name}\n` +
-    `Téléphone : ${client.phone || "—"}\n` +
-    `Total achats : ${totalSpent} FCFA`
-  );
+  document.getElementById("popup-client").classList.remove("hidden");
 }
 
-// ================== VENTES (FILTRAGE PAR JOUR) ==================
-function initSalesDate() {
-  const input = document.getElementById("sales-date");
-  if (!input) return;
-  if (!input.value) {
-    const todayIso = new Date().toISOString().slice(0, 10);
-    input.value = todayIso;
-  }
+function closeClientPopup() {
+  document.getElementById("popup-client").classList.add("hidden");
 }
-
-function getSelectedSalesDate() {
-  const input = document.getElementById("sales-date");
-  if (!input || !input.value) {
-    const todayIso = new Date().toISOString().slice(0, 10);
-    if (input) input.value = todayIso;
-    return todayIso;
-  }
-  return input.value;
-}
-
-function saleMatchesDate(sale, dateStr) {
-  if (!dateStr) return true;
-  const dstr = (sale.date || "").toString().slice(0, 10); // "YYYY-MM-DD"
-  return dstr === dateStr;
-}
-
-function getSalesForDate(dateStr) {
-  return sales.filter(sale => saleMatchesDate(sale, dateStr));
-}
-
-function updateTotalsForDate(dateStr) {
-  const list = getSalesForDate(dateStr);
-
-  let total = 0;
-  let cash = 0, orange = 0, wave = 0;
-
-  list.forEach(sale => {
-    total += sale.total;
-    const method = sale.paymentMethod || "cash";
-    if (method === "orange") orange += sale.total;
-    else if (method === "wave") wave += sale.total;
-    else cash += sale.total;
-  });
-
-  const spanTotal = document.getElementById("today-total");
-  const spanCash = document.getElementById("today-total-cash");
-  const spanOrange = document.getElementById("today-total-orange");
-  const spanWave = document.getElementById("today-total-wave");
-
-  if (spanTotal) spanTotal.textContent = total;
-  if (spanCash) spanCash.textContent = cash;
-  if (spanOrange) spanOrange.textContent = orange;
-  if (spanWave) spanWave.textContent = wave;
-}
-
-function renderSalesTable(dateStr) {
+// ================== VENTES : AFFICHAGE JOURNALIER ==================
+function updateSalesViewForSelectedDate() {
   const tbody = document.getElementById("sales-table-body");
-  if (!tbody) return;
+  const dateInput = document.getElementById("sales-date");
+  if (!tbody || !dateInput) return;
+
+  // Si aucune date choisie, on met aujourd'hui
+  if (!dateInput.value) {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    dateInput.value = todayIso;
+  }
+  const dayStr = dateInput.value; // "YYYY-MM-DD"
+
   tbody.innerHTML = "";
 
-  const list = getSalesForDate(dateStr);
+  // Filtrer les ventes du jour
+  const daySales = sales.filter(s => {
+    if (!s.date) return false;
+    const dStr = String(s.date).slice(0, 10);
+    return dStr === dayStr;
+  });
 
-  if (list.length === 0) {
+  if (daySales.length === 0) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="2">Aucune vente pour ce jour.</td>`;
+    tr.innerHTML = `<td colspan="5">Aucune vente pour ce jour.</td>`;
     tbody.appendChild(tr);
     return;
   }
 
-  list.forEach(sale => {
+  daySales.forEach(sale => {
     const tr = document.createElement("tr");
-    const dateObj = new Date(sale.date);
-    const dateStrFull = dateObj.toLocaleString("fr-FR");
+
+    // Heure
+    const d = new Date(sale.date);
+    const timeStr = isNaN(d.getTime())
+      ? ""
+      : d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+
+    // Produits (nom + qté + prix unitaire)
+    let productsHtml = "";
+    if (Array.isArray(sale.items) && sale.items.length > 0) {
+      productsHtml = sale.items
+        .map(item => {
+          const name = item.name || "Produit";
+          const qty = item.qty || 0;
+          const unitPrice = item.price != null ? item.price : 0;
+          return `${name} x ${qty} (${unitPrice} FCFA)`;
+        })
+        .join("<br>");
+    }
+
+    // Montant
+    const amount = sale.total || 0;
+
+    // Mode de paiement
+    let pm = sale.paymentMethod || "cash";
+    if (pm === "cash") pm = "Espèces";
+    else if (pm === "orange") pm = "Orange Money";
+    else if (pm === "wave") pm = "Wave";
+
+    // Client
+    let clientLabel = "—";
+    if (sale.clientName) {
+      clientLabel = sale.clientName;
+      if (sale.clientPhone) {
+        clientLabel += " (" + sale.clientPhone + ")";
+      }
+    } else if (sale.clientPhone) {
+      clientLabel = sale.clientPhone;
+    }
+
     tr.innerHTML = `
-      <td>${dateStrFull}</td>
-      <td>${sale.total} FCFA</td>
+      <td>${timeStr}</td>
+      <td>${productsHtml}</td>
+      <td>${amount} FCFA</td>
+      <td>${pm}</td>
+      <td>
+        ${clientLabel}<br>
+        <button class="danger-btn" onclick="deleteSale(${sale.id})">
+          Supprimer
+        </button>
+      </td>
     `;
+
     tbody.appendChild(tr);
   });
 }
 
-function updateSalesViewForSelectedDate() {
-  const dateStr = getSelectedSalesDate();
-  renderSalesTable(dateStr);
-  updateTotalsForDate(dateStr);
+// ================== VENTES : SUPPRESSION ==================
+function deleteSale(saleId) {
+  if (!confirm("Supprimer définitivement cette vente ?")) {
+    return;
+  }
+
+  // Trouver la vente dans le tableau local
+  const index = sales.findIndex(s => s.id === saleId);
+  if (index === -1) {
+    alert("Vente introuvable.");
+    return;
+  }
+
+  // On enlève la vente du tableau
+  sales.splice(index, 1);
+  saveSales(sales); // met à jour le localStorage
+
+  // Mettre à jour la vue Ventes & Clients & Dashboard
+  updateSalesViewForSelectedDate();
+  renderClientsTable();
+  if (typeof loadDashboardStats === "function") {
+    loadDashboardStats();
+  }
+
+  // Appeler Google Sheets pour supprimer aussi côté Sheets
+  const url = `${SHEET_URL}?action=deleteSale&id=${encodeURIComponent(saleId)}`;
+  fetch(url)
+    .then(r => r.text())
+    .then(txt => {
+      console.log("Suppression vente Sheets :", txt);
+    })
+    .catch(err => {
+      console.error("Erreur suppression vente Sheets :", err);
+    });
 }
 
 // ================== RAPPORT JOURNALIER (PDF) ==================
@@ -1228,107 +2058,216 @@ function openDailyReportForDate(dateStr) {
 }
 
 // ================== DASHBOARD ==================
+
+/**
+ * Initialise les dates du tableau de bord à aujourd'hui
+ * si rien n'est encore rempli.
+ */
 function initDashboardDates() {
   const startInput = document.getElementById("dashboard-start");
   const endInput = document.getElementById("dashboard-end");
   if (!startInput || !endInput) return;
 
   if (!startInput.value || !endInput.value) {
-    const today = new Date();
-    const iso = today.toISOString().slice(0, 10);
-    startInput.value = iso;
-    endInput.value = iso;
+    const today = new Date().toISOString().slice(0, 10);
+    startInput.value = today;
+    endInput.value = today;
   }
 }
 
+/** Raccourci : aujourd'hui */
 function setDashboardRangeToday() {
-  const today = new Date();
-  const iso = today.toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
   const startInput = document.getElementById("dashboard-start");
   const endInput = document.getElementById("dashboard-end");
   if (!startInput || !endInput) return;
-  startInput.value = iso;
-  endInput.value = iso;
+
+  startInput.value = today;
+  endInput.value = today;
   loadDashboardStats();
 }
 
+/** Raccourci : cette semaine (lundi -> dimanche) */
 function setDashboardRangeWeek() {
-  const today = new Date();
-  const day = today.getDay();
-  const diffToMonday = (day + 6) % 7;
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - diffToMonday);
+  const now = new Date();
+  const dayOfWeek = now.getDay() || 7; // Dimanche = 0 -> 7
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - dayOfWeek + 1);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
 
   const startInput = document.getElementById("dashboard-start");
   const endInput = document.getElementById("dashboard-end");
   if (!startInput || !endInput) return;
 
   startInput.value = monday.toISOString().slice(0, 10);
-  endInput.value = today.toISOString().slice(0, 10);
+  endInput.value = sunday.toISOString().slice(0, 10);
   loadDashboardStats();
 }
 
+/** Raccourci : ce mois-ci */
 function setDashboardRangeMonth() {
-  const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), 1);
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth(), 1);
+  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
   const startInput = document.getElementById("dashboard-start");
   const endInput = document.getElementById("dashboard-end");
   if (!startInput || !endInput) return;
 
-  startInput.value = start.toISOString().slice(0, 10);
-  endInput.value = today.toISOString().slice(0, 10);
+  startInput.value = first.toISOString().slice(0, 10);
+  endInput.value = last.toISOString().slice(0, 10);
   loadDashboardStats();
 }
 
+/** Raccourci : cette année */
 function setDashboardRangeYear() {
-  const today = new Date();
-  const start = new Date(today.getFullYear(), 0, 1);
+  const now = new Date();
+  const first = new Date(now.getFullYear(), 0, 1);
+  const last = new Date(now.getFullYear(), 11, 31);
 
   const startInput = document.getElementById("dashboard-start");
   const endInput = document.getElementById("dashboard-end");
   if (!startInput || !endInput) return;
 
-  startInput.value = start.toISOString().slice(0, 10);
-  endInput.value = today.toISOString().slice(0, 10);
+  startInput.value = first.toISOString().slice(0, 10);
+  endInput.value = last.toISOString().slice(0, 10);
   loadDashboardStats();
 }
 
+/**
+ * Calcule les stats du tableau de bord à partir de `sales`
+ * (CA, nb ventes, remises, répartition paiements, CA/jour, ventes/jour)
+ * puis met à jour les cartes + le graphique.
+ */
 function loadDashboardStats() {
-  const startInput = document.getElementById("dashboard-start");
-  const endInput = document.getElementById("dashboard-end");
-  if (!startInput || !endInput) return;
+  const startStr = document.getElementById("dashboard-start").value;
+  const endStr = document.getElementById("dashboard-end").value;
 
-  const start = startInput.value;
-  const end = endInput.value;
-
-  if (!start || !end) {
+  if (!startStr || !endStr) {
     alert("Merci de choisir une date de début et une date de fin.");
     return;
   }
 
-  const callbackName = "onDashboard_" + Date.now();
-  const script = document.createElement("script");
+  const start = new Date(startStr + "T00:00:00");
+  const end = new Date(endStr + "T23:59:59");
 
-  window[callbackName] = function (data) {
-    try {
-      updateDashboardUI(data);
-    } finally {
-      delete window[callbackName];
-      script.remove();
+  let total = 0;
+  let count = 0;
+  let discount = 0;
+  let cash = 0;
+  let orange = 0;
+  let wave = 0;
+
+  // Objet pour le graphique : total & nombre de ventes par jour
+  const perDay = {}; // { "YYYY-MM-DD": { total: number, count: number } }
+
+  sales.forEach(s => {
+    const d = new Date(s.date);
+    if (isNaN(d)) return;
+    if (d < start || d > end) return;
+
+    const amount = Number(s.total) || 0;
+    total += amount;
+    count += 1;
+    discount += Number(s.discountAmount) || 0;
+
+    if (s.paymentMethod === "orange") {
+      orange += amount;
+    } else if (s.paymentMethod === "wave") {
+      wave += amount;
+    } else {
+      cash += amount;
     }
-  };
 
-  script.src = `${SHEET_URL}?action=dashboard&start=${encodeURIComponent(
-    start
-  )}&end=${encodeURIComponent(end)}&callback=${callbackName}`;
-  script.onerror = function () {
-    alert("Erreur lors du chargement des données du tableau de bord.");
-  };
+    const dayKey = s.date.slice(0, 10); // "YYYY-MM-DD"
+    if (!perDay[dayKey]) {
+      perDay[dayKey] = { total: 0, count: 0 };
+    }
+    perDay[dayKey].total += amount;
+    perDay[dayKey].count += 1;
+  });
 
-  document.body.appendChild(script);
+  const avg = count > 0 ? Math.round(total / count) : 0;
+
+  // Mise à jour des cartes
+  document.getElementById("db-total").textContent = total;
+  document.getElementById("db-count").textContent = count;
+  document.getElementById("db-average").textContent = avg;
+  document.getElementById("db-discount").textContent = discount;
+  document.getElementById("db-cash").textContent = cash;
+  document.getElementById("db-orange").textContent = orange;
+  document.getElementById("db-wave").textContent = wave;
+
+  // Mise à jour du graphique
+  renderDashboardChart(perDay);
 }
 
+/**
+ * Affiche le graphique avec 2 courbes :
+ * - CA par jour
+ * - Nombre de ventes par jour
+ */
+function renderDashboardChart(perDay) {
+  const ctx = document.getElementById("dashboard-chart");
+  if (!ctx) return;
+
+  const labels = Object.keys(perDay).sort(); // dates triées
+  const caData = labels.map(d => perDay[d].total);
+  const countData = labels.map(d => perDay[d].count);
+
+  if (dashboardChart) {
+    dashboardChart.destroy();
+  }
+
+  dashboardChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "CA (FCFA)",
+          data: caData,
+          yAxisID: "y1",
+          tension: 0.2
+        },
+        {
+          label: "Nombre de ventes",
+          data: countData,
+          yAxisID: "y2",
+          tension: 0.2
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: {
+        mode: "index",
+        intersect: false
+      },
+      scales: {
+        y1: {
+          type: "linear",
+          position: "left"
+        },
+        y2: {
+          type: "linear",
+          position: "right",
+          grid: {
+            drawOnChartArea: false
+          }
+        }
+      }
+    }
+  });
+}
+
+/**
+ * (Optionnel) Si tu utilises encore la route "dashboard" de Code.gs
+ * qui renvoie un objet agrégé { totalAmount, salesCount, ... },
+ * tu peux garder cette fonction.
+ * Sinon tu peux la supprimer.
+ */
 function updateDashboardUI(data) {
   if (!data) data = {};
 
@@ -1351,7 +2290,6 @@ function updateDashboardUI(data) {
   setText("db-orange", byPayment.orange || 0);
   setText("db-wave", byPayment.wave || 0);
 }
-
 // ================== BAR À PARFUM (AFFICHAGE) ==================
 function renderPerfumeBar() {
   const tbody = document.getElementById("perfume-table-body");
@@ -1388,7 +2326,6 @@ function changePerfumeLevel(index, newLevel) {
   renderPerfumeBar();
   sendPerfumesToSheet();
 }
-
 // ================== INIT ==================
 document.addEventListener("DOMContentLoaded", () => {
   showView("caisse");
@@ -1398,6 +2335,8 @@ document.addEventListener("DOMContentLoaded", () => {
   fetchClientsFromSheet();    // clients
   fetchPerfumesFromSheet();   // bar à parfum
   fetchSalesFromSheet();      // toutes les ventes déjà présentes
+  fetchStockHistoryFromSheet();  // 
+  fetchExpensesFromSheet();
 
   const discountInput = document.getElementById("cart-discount");
   if (discountInput) {

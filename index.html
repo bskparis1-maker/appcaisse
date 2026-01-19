@@ -1,48 +1,63 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <title>Caisse - BSK</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <title>BSK - Caisse & Gestion</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
 </head>
-
 <body>
   <div class="app-container">
-
-    <!-- HEADER -->
-    <div class="header">
-      <img src="logo.png" class="logo" alt="Logo BSK" onerror="this.style.display='none'">
+    <!-- ============ HEADER ============ -->
+    <header class="header">
+      <img src="logo.png" alt="Logo BSK" class="logo" />
       <div>
-        <h1>Caisse - BSK</h1>
-        <p class="subtitle">Gestion des ventes, stocks & bar à parfum</p>
+        <h1>BSK - Caisse</h1>
+        <p class="subtitle">Caisse, stock, clients & bar à parfum</p>
       </div>
-    </div>
+    </header>
 
-    <!-- NAVIGATION -->
+    <!-- ============ NAVIGATION ============ -->
     <nav>
-      <button onclick="showView('caisse')">Caisse</button>
-      <button onclick="showView('produits')">Produits</button>
-      <button onclick="showView('clients')">Clients</button>
-      <button onclick="showView('ventes')">Ventes</button>
-      <button onclick="showView('barparfum')">Bar à parfum</button>
-      <button onclick="showView('dashboard')">Tableau de bord</button>
-    </nav>
+  <button onclick="showView('caisse')">Caisse</button>
+  <button onclick="showView('ventes')">Ventes</button>
+  <button onclick="showView('clients')">Clients</button>
+  <button onclick="showView('produits')">Produits</button>
+  <button onclick="showView('dashboard')">Tableau de bord</button>
+  <button onclick="showView('frais')">Frais</button>
+  <button onclick="showView('bar-parfum')">Bar à parfum</button>
+</nav>
 
-    <!-- =============== CAISSE =============== -->
+    <!-- ============ VUE CAISSE ============ -->
     <section id="view-caisse" class="view">
       <h2>Caisse</h2>
 
+      <!-- Promo -->
+      <div class="payment-section">
+        <h3>Mode promo & Vente en gros</h3>
+        <button class="secondary-btn" onclick="openPromoModal()">
+          Activer / régler la promo
+        </button>
+        <label style="display:block; margin-top:8px;">
+          <input type="checkbox" id="wholesale-mode" />
+          Vente en gros (prix personnalisés, remises désactivées)
+        </label>
+      </div>
+
+      <!-- Produits -->
+      <h3>Produits</h3>
       <div id="products-list"></div>
 
-      <!-- CLIENT -->
-      <h3>Client</h3>
-      <select id="client-select"></select>
-      <button onclick="openAddClientModal()" class="secondary-btn">+ Ajouter client</button>
+      <!-- Panier -->
+      <h3>Panier</h3>
+      <div id="cart-list">Panier vide.</div>
+      <p class="total-label">
+        Total : <strong><span id="cart-total">0</span> FCFA</strong>
+      </p>
 
-      <!-- PAIEMENT -->
+      <!-- Remise & paiement -->
       <div class="payment-section">
-        <h3>Paiement</h3>
+        <h3>Paiement & remise</h3>
 
         <label>
           Mode de paiement :
@@ -56,50 +71,154 @@
         <div class="discount-box">
           <label>
             Remise (FCFA) :
-            <input type="number" id="cart-discount" value="0">
+            <input type="number" id="cart-discount" value="0" min="0" />
           </label>
-
           <label>
-            Raison :
-            <input type="text" id="cart-discount-reason" placeholder="Ex : geste commercial">
+            Raison de la remise :
+            <input
+              type="text"
+              id="cart-discount-reason"
+              placeholder="Ex : geste commercial, famille…"
+            />
           </label>
         </div>
       </div>
 
-      <!-- PANIER -->
-      <h3>Panier</h3>
-      <div id="cart-list"></div>
+      <!-- Client -->
+      <h3>Client</h3>
+      <div>
+        <label for="client-select">Compte client :</label>
+        <select id="client-select"></select>
+        <button class="secondary-btn" onclick="openAddClientModal()">
+          Nouveau client
+        </button>
+      </div>
 
-      <p class="total-label">
-        <strong>Total :</strong>
-        <span id="cart-total">0</span> FCFA
-      </p>
-
-      <button onclick="confirmSale()" class="primary-btn">Valider la vente</button>
-      <button onclick="clearCart()" class="danger-btn">Annuler le panier</button>
+      <!-- Actions caisse -->
+      <div style="margin-top:12px;">
+        <button class="primary-btn" onclick="confirmSale()">
+          Valider la vente
+        </button>
+        <button class="secondary-btn" onclick="printTicket()">
+          Imprimer le ticket
+        </button>
+        <button class="danger-btn" onclick="clearCart()">
+          Annuler le panier
+        </button>
+      </div>
     </section>
 
-    <!-- =============== PRODUITS & STOCK =============== -->
-    <section id="view-produits" class="view hidden">
-      <h2>Produits & Stock</h2>
+    <!-- ============ POPUP PROMO ============ -->
+    <div
+      id="promo-popup"
+      class="view hidden"
+      style="
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 50;
+      "
+    >
+      <div
+        style="
+          background: #ffffff;
+          padding: 16px 18px;
+          border-radius: 12px;
+          max-width: 360px;
+          width: 100%;
+          box-shadow: 0 15px 35px rgba(15, 23, 42, 0.3);
+        "
+      >
+        <h3>Configurer la promo</h3>
+        <p style="font-size:13px; color:#4b5563; margin-top:4px;">
+          Définis les prix promo pour les articles à 8 000 FCFA et 5 000 FCFA,
+          ainsi que la période de la promotion.
+        </p>
+
+        <div class="discount-box">
+          <label>
+            Nouveau prix pour les produits à 8 000 FCFA :
+            <input type="number" id="promo-8000" min="0" />
+          </label>
+          <label>
+            Nouveau prix pour les produits à 5 000 FCFA :
+            <input type="number" id="promo-5000" min="0" />
+          </label>
+          <label>
+            Date de début :
+            <input type="date" id="promo-start" />
+          </label>
+          <label>
+            Date de fin :
+            <input type="date" id="promo-end" />
+          </label>
+        </div>
+
+        <div style="margin-top:10px;">
+          <button class="primary-btn" onclick="savePromo()">Enregistrer</button>
+          <button class="secondary-btn" onclick="closePromoPopup()">
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ VUE VENTES ============ -->
+    <section id="view-ventes" class="view hidden">
+      <h2>Ventes</h2>
+
+      <div class="payment-section">
+        <h3>Ventes du jour</h3>
+        <label>
+          Date :
+          <input
+            type="date"
+            id="sales-date"
+            onchange="updateSalesViewForSelectedDate()"
+          />
+        </label>
+        <button class="secondary-btn" onclick="updateSalesViewForSelectedDate()">
+          Actualiser
+        </button>
+        <button class="secondary-btn" onclick="refreshSalesFromSheet()">
+          Recharger depuis Google Sheets
+        </button>
+        <div id="sales-debug" style="font-size:12px; color:#6b7280; margin-top:4px;"></div>
+      </div>
+
       <table>
         <thead>
           <tr>
-            <th>Nom</th>
-            <th>Prix</th>
-            <th>Stock</th>
-            <th>Modifier</th>
+            <th>Heure</th>
+            <th>Produits</th>
+            <th>Montant</th>
+            <th>Paiement</th>
+            <th>Client / Actions</th>
           </tr>
         </thead>
-        <tbody id="products-table-body"></tbody>
+        <tbody id="sales-table-body"></tbody>
       </table>
     </section>
 
-    <!-- =============== CLIENTS =============== -->
+    <!-- ============ VUE CLIENTS ============ -->
     <section id="view-clients" class="view hidden">
       <h2>Clients</h2>
 
-      <input id="client-search" type="text" placeholder="Rechercher..." oninput="renderClientsTable()">
+      <input
+        type="text"
+        id="client-search"
+        placeholder="Rechercher un client (nom ou téléphone)…"
+        oninput="renderClientsTable()"
+      />
+
+      <div style="margin-top:6px; margin-bottom:8px;">
+        <button class="primary-btn" onclick="openAddClientModal()">
+          Ajouter un client
+        </button>
+      </div>
 
       <table>
         <thead>
@@ -114,58 +233,249 @@
       </table>
     </section>
 
-    <!-- =============== VENTES =============== -->
-    <section id="view-ventes" class="view hidden">
-      <h2>Ventes</h2>
+    <!-- ============ VUE PRODUITS (STOCK) ============ -->
+    <section id="view-produits" class="view hidden">
+      <h2>Produits & Stock</h2>
 
+      <p style="font-size:13px; color:#4b5563;">
+        Gestion du stock des produits (caisse principale). Toute modification
+        manuelle du stock demande un motif et est enregistrée dans l'historique.
+      </p>
+
+      <!-- Tableau principal des produits -->
+      <table>
+        <thead>
+          <tr>
+            <th>Nom</th>
+            <th>Prix (FCFA)</th>
+            <th>Stock actuel</th>
+            <th>Nouveau stock</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="products-table-body"></tbody>
+      </table>
+
+      <h3 style="margin-top:24px;">Historique des mouvements de stock</h3>
+      <p style="font-size:13px; color:#4b5563;">
+        Les changements de stock manuels sont listés ci-dessous
+        (date, ancien stock, nouveau stock, variation et motif).
+      </p>
+
+      <!-- 🔎 Filtres de date pour l'historique -->
       <div class="dashboard-filters">
-        <label>
-          Jour :
-          <input type="date" id="sales-date">
-        </label>
         <div>
-          <button class="secondary-btn" onclick="updateSalesViewForSelectedDate()">Voir les ventes</button>
-          <button class="secondary-btn" onclick="refreshSalesFromSheet()">Rafraîchir depuis Google Sheets</button>
-          <button class="primary-btn" onclick="openDailyReportForSelectedDate()">Télécharger rapport PDF</button>
+          <label>
+            Du :
+            <input
+              type="date"
+              id="stock-history-start"
+              onchange="renderStockHistoryTable()"
+            />
+          </label>
+          <label>
+            au :
+            <input
+              type="date"
+              id="stock-history-end"
+              onchange="renderStockHistoryTable()"
+            />
+          </label>
+        </div>
+        <div class="dashboard-quick">
+          <button class="secondary-btn" onclick="setStockHistoryRangeToday()">
+            Aujourd'hui
+          </button>
+          <button class="secondary-btn" onclick="setStockHistoryRangeWeek()">
+            Cette semaine
+          </button>
+          <button class="secondary-btn" onclick="setStockHistoryRangeMonth()">
+            Ce mois
+          </button>
+          <button class="secondary-btn" onclick="setStockHistoryRangeYear()">
+            Cette année
+          </button>
         </div>
       </div>
-
-      <p class="total-label">
-        Total du jour :
-        <span id="today-total">0</span> FCFA
-      </p>
-
-      <p class="total-label">
-        Espèces : <span id="today-total-cash">0</span> FCFA ·
-        Orange Money : <span id="today-total-orange">0</span> FCFA ·
-        Wave : <span id="today-total-wave">0</span> FCFA
-      </p>
 
       <table>
         <thead>
           <tr>
-            <th>Date / heure</th>
-            <th>Montant total</th>
+            <th>Date / Heure</th>
+            <th>Produit</th>
+            <th>Ancien stock</th>
+            <th>Nouveau stock</th>
+            <th>Variation</th>
+            <th>Motif</th>
           </tr>
         </thead>
-        <tbody id="sales-table-body"></tbody>
+        <tbody id="stock-history-body"></tbody>
+      </table>
+    </section>
+    <!-- ============ VUE TABLEAU DE BORD ============ -->
+    <section id="view-dashboard" class="view hidden">
+      <h2>Tableau de bord</h2>
+
+      <div class="dashboard-filters">
+        <div>
+          <label>
+            Du :
+            <input type="date" id="dashboard-start" onchange="loadDashboardStats()" />
+          </label>
+          <label>
+            au :
+            <input type="date" id="dashboard-end" onchange="loadDashboardStats()" />
+          </label>
+        </div>
+        <div class="dashboard-quick">
+          <button class="secondary-btn" onclick="setDashboardRangeToday()">
+            Aujourd'hui
+          </button>
+          <button class="secondary-btn" onclick="setDashboardRangeWeek()">
+            Cette semaine
+          </button>
+          <button class="secondary-btn" onclick="setDashboardRangeMonth()">
+            Ce mois
+          </button>
+          <button class="secondary-btn" onclick="setDashboardRangeYear()">
+            Cette année
+          </button>
+        </div>
+      </div>
+
+      <div class="dashboard-summary">
+        <div class="card">
+          <div class="label">Chiffre d'affaires</div>
+          <div class="value"><span id="db-total">0</span> FCFA</div>
+        </div>
+        <div class="card">
+          <div class="label">Nombre de ventes</div>
+          <div class="value" id="db-count">0</div>
+        </div>
+        <div class="card">
+          <div class="label">Panier moyen</div>
+          <div class="value"><span id="db-average">0</span> FCFA</div>
+        </div>
+        <div class="card">
+          <div class="label">Remises totales</div>
+          <div class="value"><span id="db-discount">0</span> FCFA</div>
+        </div>
+        <div class="card">
+          <div class="label">Espèces</div>
+          <div class="value"><span id="db-cash">0</span> FCFA</div>
+        </div>
+        <div class="card">
+          <div class="label">Orange Money</div>
+          <div class="value"><span id="db-orange">0</span> FCFA</div>
+        </div>
+        <div class="card">
+          <div class="label">Wave</div>
+          <div class="value"><span id="db-wave">0</span> FCFA</div>
+        </div>
+      </div>
+
+      <div style="margin-top:18px;">
+        <canvas id="dashboard-chart" width="400" height="200"></canvas>
+      </div>
+    </section>
+
+    <!-- ============ VUE FRAIS ============ -->
+    <section id="view-frais" class="view hidden">
+      <h2>Frais</h2>
+
+      <p style="font-size:13px; color:#4b5563;">
+        Enregistre ici les dépenses (motif + montant). Chaque dépense est datée
+        et apparaît dans l'historique ci-dessous.
+      </p>
+
+      <h3>Nouvelle dépense</h3>
+      <div class="payment-section">
+        <div class="discount-box">
+          <label>
+            Motif de la dépense :
+            <input
+              type="text"
+              id="expense-label"
+              placeholder="Ex : Loyer boutique, Fournisseur, Transport..."
+            />
+          </label>
+          <label>
+            Montant (FCFA) :
+            <input
+              type="number"
+              id="expense-amount"
+              min="0"
+              placeholder="0"
+            />
+          </label>
+        </div>
+        <button class="primary-btn" onclick="addExpense()">
+          Valider la dépense
+        </button>
+      </div>
+
+      <h3>Historique des frais</h3>
+      <p style="font-size:13px; color:#4b5563;">
+        Filtre les dépenses par période : aujourd'hui, cette semaine, ce mois,
+        cette année, ou avec un intervalle de dates personnalisé.
+      </p>
+
+      <div class="dashboard-filters">
+        <div>
+          <label>
+            Du :
+            <input
+              type="date"
+              id="expense-history-start"
+              onchange="renderExpensesTable()"
+            />
+          </label>
+          <label>
+            au :
+            <input
+              type="date"
+              id="expense-history-end"
+              onchange="renderExpensesTable()"
+            />
+          </label>
+        </div>
+        <div class="dashboard-quick">
+          <button class="secondary-btn" onclick="setExpenseHistoryRangeToday()">
+            Aujourd'hui
+          </button>
+          <button class="secondary-btn" onclick="setExpenseHistoryRangeWeek()">
+            Cette semaine
+          </button>
+          <button class="secondary-btn" onclick="setExpenseHistoryRangeMonth()">
+            Ce mois
+          </button>
+          <button class="secondary-btn" onclick="setExpenseHistoryRangeYear()">
+            Cette année
+          </button>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Date / Heure</th>
+            <th>Motif</th>
+            <th>Montant (FCFA)</th>
+          </tr>
+        </thead>
+        <tbody id="expense-history-body"></tbody>
       </table>
     </section>
 
-    <!-- =============== BAR À PARFUM =============== -->
-    <section id="view-barparfum" class="view hidden">
+    <!-- ============ VUE BAR À PARFUM ============ -->
+    <section id="view-bar-parfum" class="view hidden">
       <h2>Bar à parfum</h2>
-      <p class="help-text">
-        Mise à jour manuelle des niveaux de stock, synchronisée avec Google Sheets (onglet "BarParfum").
+      <p style="font-size:13px; color:#4b5563;">
+        Indique le niveau de chaque référence (1L ou plus, 0,5L, rupture).
+        Les couleurs se mettent à jour automatiquement.
       </p>
 
-      <p class="legend">
-        <span class="legend-full">1L ou plus</span>
-        <span class="legend-half">0,5L</span>
-        <span class="legend-out">Rupture</span>
-      </p>
-
-      <table class="table-perfume">
+      <table>
         <thead>
           <tr>
             <th>Référence</th>
@@ -175,43 +485,12 @@
         <tbody id="perfume-table-body"></tbody>
       </table>
     </section>
-
-    <!-- =============== TABLEAU DE BORD =============== -->
-    <section id="view-dashboard" class="view hidden">
-      <h2>Tableau de bord</h2>
-
-      <div class="dashboard-filters">
-        <label>Du :
-          <input type="date" id="dashboard-start">
-        </label>
-
-        <label>Au :
-          <input type="date" id="dashboard-end">
-        </label>
-
-        <button onclick="loadDashboardStats()" class="secondary-btn">Actualiser</button>
-
-        <div class="dashboard-quick">
-          <button class="secondary-btn" onclick="setDashboardRangeToday()">Aujourd’hui</button>
-          <button class="secondary-btn" onclick="setDashboardRangeWeek()">Cette semaine</button>
-          <button class="secondary-btn" onclick="setDashboardRangeMonth()">Ce mois-ci</button>
-          <button class="secondary-btn" onclick="setDashboardRangeYear()">Cette année</button>
-        </div>
-      </div>
-
-      <div class="dashboard-summary">
-        <div class="card"><div class="label">CA Total</div><div class="value" id="db-total">0</div></div>
-        <div class="card"><div class="label">Ventes</div><div class="value" id="db-count">0</div></div>
-        <div class="card"><div class="label">Panier moyen</div><div class="value" id="db-average">0</div></div>
-        <div class="card"><div class="label">Remises</div><div class="value" id="db-discount">0</div></div>
-        <div class="card"><div class="label">Espèces</div><div class="value" id="db-cash">0</div></div>
-        <div class="card"><div class="label">Orange</div><div class="value" id="db-orange">0</div></div>
-        <div class="card"><div class="label">Wave</div><div class="value" id="db-wave">0</div></div>
-      </div>
-    </section>
-
   </div>
 
+  <!-- Librairie Chart.js pour le graphique du tableau de bord -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Ton code -->
   <script src="app.js"></script>
 </body>
 </html>
