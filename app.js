@@ -32,34 +32,39 @@ const PERFUME_LEVELS = {
   out:  { label: "Rupture",    className: "perfume-out" }
 };
 
-// ================== LOCAL STORAGE HELPERS ==================
+// ================== LOCAL STORAGE HELPERS (SIMPLIFIÉS) ==================
+
+// Produits : on part juste des valeurs par défaut,
+// puis fetchStockFromSheet() viendra les mettre à jour depuis Sheets.
 function loadProducts() {
-  const data = localStorage.getItem("products");
-  if (data) return JSON.parse(data);
-  localStorage.setItem("products", JSON.stringify(defaultProducts));
-  return defaultProducts;
+  return defaultProducts.slice();
 }
 
 function saveProducts(products) {
-  localStorage.setItem("products", JSON.stringify(products));
+  // On pourrait stocker en local si on veut, mais ce n'est pas obligatoire
+  // car la "vérité" vient de Google Sheets. On laisse vide pour simplifier.
+  // localStorage.setItem("products", JSON.stringify(products));
 }
 
+// Ventes : on ne lit PAS le localStorage, on laisse la liste vide au départ,
+// puis fetchSalesFromSheet() charge les ventes depuis Google Sheets.
 function loadSales() {
-  const data = localStorage.getItem("sales");
-  return data ? JSON.parse(data) : [];
+  return [];
 }
 
 function saveSales(sales) {
-  localStorage.setItem("sales", JSON.stringify(sales));
+  // Pareil, on pourrait garder une copie en local,
+  // mais ce n'est pas nécessaire pour la synchro multi-appareils.
+  // localStorage.setItem("sales", JSON.stringify(sales));
 }
 
+// Clients : idem, tout vient de Google Sheets -> pas besoin du cache local.
 function loadClients() {
-  const data = localStorage.getItem("clients");
-  return data ? JSON.parse(data) : [];
+  return [];
 }
 
 function saveClients(clients) {
-  localStorage.setItem("clients", JSON.stringify(clients));
+  // localStorage.setItem("clients", JSON.stringify(clients));
 }
 
 // ================== ÉTAT GLOBAL ==================
@@ -166,6 +171,20 @@ function fetchClientsFromSheet() {
   document.body.appendChild(script);
 }
 
+// ================== ENVOI VENTE -> SHEETS ==================
+function sendSaleToSheet(sale) {
+  const payload = encodeURIComponent(JSON.stringify({ sale }));
+  const url = `${SHEET_URL}?action=sale&payload=${payload}`;
+
+  // On passe par un iframe "invisible" pour éviter les erreurs CORS
+  const iframe = document.createElement("iframe");
+  iframe.style.display = "none";
+  iframe.src = url;
+  document.body.appendChild(iframe);
+
+  setTimeout(() => iframe.remove(), 5000);
+}
+
 // ================== VENTES <-> SHEETS ==================
 function fetchSalesFromSheet() {
   const debugEl = document.getElementById("sales-debug");
@@ -177,21 +196,22 @@ function fetchSalesFromSheet() {
   const script = document.createElement("script");
 
   window[callbackName] = function (data) {
+  console.log("🔵 Réponse brute getSales:", data);
     try {
       if (data && Array.isArray(data.sales)) {
-        // On transforme ce que renvoie Code.gs en objets "vente"
         sales = data.sales.map(s => {
           const info = s.info || {};
 
-          // Liste produits + quantités
-          const names = (s.productNames || "")
-            .split(",")
-            .map(t => t.trim())
-            .filter(Boolean);
+          const namesStr = String(s.productNames || "");
+	  const names = namesStr
+  	  .split(",")
+  	  .map(t => t.trim())
+  	  .filter(Boolean);
 
-          const qtys = (s.quantities || "")
-            .split(",")
-            .map(t => parseInt(t, 10) || 0);
+          const quantitiesStr = String(s.quantities || "");
+          const qtys = quantitiesStr
+          .split(",")
+           .map(t => parseInt(t.trim(), 10) || 0);
 
           const items = names.map((name, index) => ({
             name,
@@ -200,8 +220,8 @@ function fetchSalesFromSheet() {
 
           return {
             id: s.id,
-            date: s.date,                            // "YYYY-MM-DDTHH:mm:ss"
-            total: Number(s.total) || 0,             // montant payé
+            date: s.date,                       // "YYYY-MM-DDTHH:mm:ss"
+            total: Number(s.total) || 0,
             items,
             paymentMethod: info.paymentMethod || "cash",
             discountAmount: Number(info.discountAmount) || 0,
@@ -211,8 +231,10 @@ function fetchSalesFromSheet() {
             clientPhone: info.clientPhone || ""
           };
         });
+  console.log("🟢 Ventes après mapping:", sales);
 
-        saveSales(sales);
+        // On garde une copie locale si tu veux
+        // saveSales(sales);
 
         if (debugEl) {
           debugEl.textContent =
@@ -234,7 +256,7 @@ function fetchSalesFromSheet() {
 
   script.src = `${SHEET_URL}?action=getSales&callback=${callbackName}`;
   script.onerror = function () {
-    console.warn("Erreur chargement ventes (local uniquement).");
+    console.warn("Erreur chargement ventes (getSales).");
     if (debugEl) {
       debugEl.textContent =
         "Erreur de connexion à Google Sheets (getSales).";
@@ -248,6 +270,12 @@ function fetchSalesFromSheet() {
 
 function refreshSalesFromSheet() {
   fetchSalesFromSheet();
+}
+
+function formatPaymentMethod(method) {
+  if (method === "orange") return "Orange Money";
+  if (method === "wave") return "Wave";
+  return "Espèces";
 }
 // ================== BAR À PARFUM <-> SHEETS ==================
 function fetchPerfumesFromSheet() {
@@ -650,19 +678,6 @@ function openAddClientModal() {
   renderClientsTable();
 
   alert("Client ajouté.");
-}
-
-// ================== ENVOI VENTE -> SHEETS ==================
-function sendSaleToSheet(sale) {
-  const payload = encodeURIComponent(JSON.stringify({ sale }));
-  const url = `${SHEET_URL}?payload=${payload}`;
-
-  const iframe = document.createElement("iframe");
-  iframe.style.display = "none";
-  iframe.src = url;
-  document.body.appendChild(iframe);
-
-  setTimeout(() => iframe.remove(), 5000);
 }
 
 // ================== CONFIRMATION VENTE ==================
