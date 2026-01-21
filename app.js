@@ -1869,6 +1869,56 @@ function deleteSale(saleId) {
     });
 }
 
+// ====== HELPERS POUR LES RAPPORTS JOURNALIERS ======
+
+// Retourne la date sélectionnée dans l’onglet Ventes, ou aujourd’hui par défaut
+function getSelectedSalesDate() {
+  const input = document.getElementById("sales-date");
+  if (input && input.value) return input.value;
+
+  const today = new Date().toISOString().slice(0, 10);
+  if (input) input.value = today;
+  return today;
+}
+
+// Toutes les ventes pour une date "YYYY-MM-DD"
+function getSalesForDate(dateStr) {
+  return (sales || []).filter(s => {
+    if (!s.date) return false;
+    const dStr = typeof s.date === "string"
+      ? s.date.slice(0, 10)
+      : new Date(s.date).toISOString().slice(0, 10);
+    return dStr === dateStr;
+  });
+}
+
+// Toutes les dépenses pour une date "YYYY-MM-DD"
+function getExpensesForDate(dateStr) {
+  return (expenses || []).filter(e => {
+    if (!e.date) return false;
+    const dStr = typeof e.date === "string"
+      ? e.date.slice(0, 10)
+      : new Date(e.date).toISOString().slice(0, 10);
+    return dStr === dateStr;
+  });
+}
+
+// Nombre de clients uniques sur la journée
+function getUniqueClientsCountForDate(dateStr) {
+  const daySales = getSalesForDate(dateStr);
+  const seen = new Set();
+
+  daySales.forEach(s => {
+    if (s.clientId) {
+      seen.add("id:" + String(s.clientId));
+    } else if (s.clientPhone || s.clientName) {
+      seen.add("np:" + (s.clientPhone || "") + "|" + (s.clientName || ""));
+    }
+  });
+
+  return seen.size;
+}
+
 // ================== RAPPORT JOURNALIER (PDF) ==================
 function openDailyReportForSelectedDate() {
   const dateStr = getSelectedSalesDate();
@@ -1877,6 +1927,9 @@ function openDailyReportForSelectedDate() {
 
 function openDailyReportForDate(dateStr) {
   const daySales = getSalesForDate(dateStr);
+  const dayExpenses = getExpensesForDate(dateStr);
+  const uniqueClients = getUniqueClientsCountForDate(dateStr);
+
   if (daySales.length === 0) {
     alert("Aucune vente pour ce jour.");
     return;
@@ -1884,36 +1937,46 @@ function openDailyReportForDate(dateStr) {
 
   const dateLabel = new Date(dateStr + "T00:00:00").toLocaleDateString("fr-FR");
 
-  let total = 0;
+  // ===== Résumé ventes + remises =====
+  let totalSalesAmount = 0;
+  let totalDiscountAmount = 0;
+
+  // Pour le tableau produits
   const productMap = {}; // name -> { qty, amount, unitPrice, times[] }
 
   daySales.forEach(sale => {
-    total += sale.total;
+    const saleAmount = Number(sale.total) || 0;
+    totalSalesAmount += saleAmount;
 
-    // Somme de base avant remise
-    let baseSum = 0;
-    sale.items.forEach(item => {
-      const product = products.find(p => p.id === item.productId);
-      const unit = product ? product.price : 0;
-      baseSum += unit * item.qty;
-    });
-
+    // Remise totale : on prend soit le détail, soit discountAmount
     const saleDiscountTotal =
       (sale.promoDiscount || 0) +
       (sale.manualDiscount || 0) +
-      (sale.loyaltyDiscount || 0);
+      (sale.loyaltyDiscount || 0) ||
+      (sale.discountAmount || 0);
+
+    totalDiscountAmount += saleDiscountTotal;
+
+    // Calcul pour la répartition par produit
+    let baseSum = 0;
+    (sale.items || []).forEach(item => {
+      const product = products.find(p => p.id === item.productId);
+      const unit = product ? product.price : (item.price || 0);
+      baseSum += unit * (item.qty || 0);
+    });
 
     const saleTime = new Date(sale.date).toLocaleTimeString("fr-FR", {
       hour: "2-digit",
       minute: "2-digit"
     });
 
-    sale.items.forEach(item => {
+    (sale.items || []).forEach(item => {
       const product = products.find(p => p.id === item.productId);
       const name = item.name || (product ? product.name : "");
-      const unitPrice = product ? product.price : 0;
-      const lineBase = unitPrice * item.qty;
+      const unitPriceBase = product ? product.price : (item.price || 0);
+      const lineBase = unitPriceBase * (item.qty || 0);
 
+      // On répartit la remise sur chaque ligne proportionnellement
       let lineFinal = lineBase;
       if (baseSum > 0 && saleDiscountTotal > 0) {
         const ratio = lineBase / baseSum;
@@ -1922,21 +1985,63 @@ function openDailyReportForDate(dateStr) {
       }
 
       if (!productMap[name]) {
-        productMap[name] = { qty: 0, amount: 0, unitPrice: unitPrice, times: [] };
+        productMap[name] = {
+          qty: 0,
+          amount: 0,
+          unitPrice: unitPriceBase,
+          times: []
+        };
       }
-      productMap[name].qty += item.qty;
+      productMap[name].qty += item.qty || 0;
       productMap[name].amount += lineFinal;
       productMap[name].times.push(saleTime);
     });
   });
 
-  const average = Math.round(total / daySales.length);
+  const salesCount = daySales.length;
+  const averageBasket = salesCount > 0
+    ? Math.round(totalSalesAmount / salesCount)
+    : 0;
 
+  // ===== Frais du jour =====
+  let totalExpensesAmount = 0;
+  let expensesRowsHtml = "";
+
+  if (dayExpenses.length === 0) {
+    expensesRowsHtml = `
+      <tr>
+        <td colspan="3">Aucun frais enregistré pour ce jour.</td>
+      </tr>
+    `;
+  } else {
+    dayExpenses.forEach(exp => {
+      const d = new Date(exp.date);
+      const dateTimeStr = isNaN(d.getTime())
+        ? exp.date
+        : d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+
+      const amount = Number(exp.amount) || 0;
+      totalExpensesAmount += amount;
+
+      expensesRowsHtml += `
+        <tr>
+          <td>${dateTimeStr}</td>
+          <td>${exp.label || ""}</td>
+          <td style="text-align:right;">${amount} FCFA</td>
+        </tr>
+      `;
+    });
+  }
+
+  // ===== Tableau produits vendus =====
   let productRows = "";
   Object.keys(productMap).forEach(name => {
     const info = productMap[name];
     const timesStr = info.times.join(", ");
-    const unitDisplay = info.qty > 0 ? Math.round(info.amount / info.qty) : info.unitPrice;
+    const unitDisplay = info.qty > 0
+      ? Math.round(info.amount / info.qty)
+      : info.unitPrice;
+
     productRows += `
       <tr>
         <td>${name}</td>
@@ -1947,6 +2052,9 @@ function openDailyReportForDate(dateStr) {
       </tr>
     `;
   });
+
+  // ===== Synthèse finale =====
+  const netResult = totalSalesAmount - totalExpensesAmount;
 
   const html = `
     <!DOCTYPE html>
@@ -1962,7 +2070,7 @@ function openDailyReportForDate(dateStr) {
           color: #111827;
         }
         .report-container {
-          max-width: 800px;
+          max-width: 900px;
           margin: 0 auto;
         }
         .report-header {
@@ -2011,6 +2119,9 @@ function openDailyReportForDate(dateStr) {
           margin-top: 8px;
           font-size: 13px;
         }
+        .summary strong {
+          font-weight: 600;
+        }
         .print-btn {
           margin-top: 16px;
           padding: 8px 14px;
@@ -2023,7 +2134,7 @@ function openDailyReportForDate(dateStr) {
         <div class="report-header">
           <img src="logo.png" alt="Logo BSK" onerror="this.style.display='none'">
           <div>
-            <h1>Rapport de ventes</h1>
+            <h1>Rapport journalier</h1>
             <div class="subtitle">
               Date : ${dateLabel}<br>
               Grand Dakar – Garage Casamance · Tél : 77 876 92 01
@@ -2031,21 +2142,23 @@ function openDailyReportForDate(dateStr) {
           </div>
         </div>
 
-        <h2>Résumé</h2>
+        <h2>1. Résumé des ventes du jour</h2>
         <div class="summary">
-          Nombre de ventes : <strong>${daySales.length}</strong><br>
-          Total du jour : <strong>${total} FCFA</strong><br>
-          Panier moyen : <strong>${average} FCFA</strong>
+          Nombre de ventes : <strong>${salesCount}</strong><br>
+          Nombre de clients : <strong>${uniqueClients}</strong><br>
+          Chiffre d'affaires (après remises) : <strong>${totalSalesAmount} FCFA</strong><br>
+          Total des remises : <strong>${totalDiscountAmount} FCFA</strong><br>
+          Panier moyen : <strong>${averageBasket} FCFA</strong>
         </div>
 
-        <h2>Répartition par produit (prix après remise)</h2>
+        <h2>2. Produits vendus (prix après remise)</h2>
         <table>
           <thead>
             <tr>
               <th>Produit</th>
               <th>Quantité vendue</th>
-              <th>Prix moyen (avec remise)</th>
-              <th>Montant total (avec remise)</th>
+              <th>Prix moyen</th>
+              <th>Montant total</th>
               <th>Heure(s) de vente</th>
             </tr>
           </thead>
@@ -2053,6 +2166,32 @@ function openDailyReportForDate(dateStr) {
             ${productRows}
           </tbody>
         </table>
+
+        <h2>3. Frais / dépenses du jour</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Heure</th>
+              <th>Motif</th>
+              <th>Montant</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${expensesRowsHtml}
+            <tr>
+              <td colspan="2" style="text-align:right;"><strong>Total des frais</strong></td>
+              <td style="text-align:right;"><strong>${totalExpensesAmount} FCFA</strong></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>4. Synthèse CA du jour</h2>
+        <div class="summary">
+          Chiffre d'affaires (ventes) : <strong>${totalSalesAmount} FCFA</strong><br>
+          Moins frais du jour : <strong>${totalExpensesAmount} FCFA</strong><br>
+          <span>Résultat net approximatif : </span>
+          <strong>${netResult} FCFA</strong>
+        </div>
 
         <button class="print-btn" onclick="window.print()">
           Imprimer / Enregistrer en PDF
@@ -2062,7 +2201,7 @@ function openDailyReportForDate(dateStr) {
     </html>
   `;
 
-  const win = window.open("", "_blank", "width=900,height=900");
+  const win = window.open("", "_blank", "width=1000,height=900");
   if (!win) {
     alert("Autorisez les pop-up pour afficher le rapport.");
     return;
@@ -2071,7 +2210,6 @@ function openDailyReportForDate(dateStr) {
   win.document.write(html);
   win.document.close();
 }
-
 // ================== DASHBOARD ==================
 
 /**
