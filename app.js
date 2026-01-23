@@ -442,6 +442,8 @@ function renderProductsForSale() {
 
 // -------- PANIER --------
 
+// -------- PANIER --------
+
 function addToCart(productId) {
   const product = products.find(p => p.id === productId);
   if (!product) {
@@ -494,8 +496,8 @@ function addToCart(productId) {
     cart.push({
       productId: product.id,
       name: product.name,
-      basePrice: product.price, // prix catalogue
-      price: unitPrice,         // prix utilisé (modifiable si wholesale)
+      basePrice: product.price, // prix catalogue (3000, 5000, 8000…)
+      price: unitPrice,         // prix utilisé (modifiable si gros)
       qty,
       wholesale
     });
@@ -508,19 +510,39 @@ function calculateCartTotals() {
   const wholesaleMode = document.getElementById("wholesale-mode")?.checked;
 
   let baseTotal = 0;
-  let promoEligibleQty = 0;
+
+  // Promo 1 : produits à 8000 → 2 = -1000
+  let promo8000Qty = 0;
+
+  // Promo 2 : Bar à Thiouraye (id=3, basePrice=3000) → 2 = -1000 (2 pour 5000)
+  let thiourayeQty = 0;
 
   cart.forEach(item => {
     baseTotal += item.price * item.qty;
 
+    // Promo 8000 (ancienne promo)
     if (!wholesaleMode && !item.wholesale && item.basePrice === 8000) {
-      promoEligibleQty += item.qty;
+      promo8000Qty += item.qty;
+    }
+
+    // Promo Bar à Thiouraye : on se base sur l'id (3) + basePrice 3000
+    if (
+      !wholesaleMode &&
+      !item.wholesale &&
+      item.productId === 3 &&      // Bar à Thiouraye
+      item.basePrice === 3000
+    ) {
+      thiourayeQty += item.qty;
     }
   });
 
   let promoDiscount = 0;
   if (!wholesaleMode) {
-    promoDiscount = Math.floor(promoEligibleQty / 2) * 1000;
+    // 2 produits à 8000 → -1000
+    promoDiscount += Math.floor(promo8000Qty / 2) * 1000;
+
+    // 2 Thiouraye à 3000 → -1000 (2 pour 5000)
+    promoDiscount += Math.floor(thiourayeQty / 2) * 1000;
   }
 
   const discountInput = document.getElementById("cart-discount");
@@ -528,7 +550,7 @@ function calculateCartTotals() {
 
   if (discountInput) {
     if (wholesaleMode) {
-      // en gros → remise désactivée
+      // en gros → remise manuelle désactivée
       discountInput.disabled = true;
       discountInput.value = "0";
     } else {
@@ -631,7 +653,6 @@ function printTicket() {
 
   openReceiptWindow(saleToPrint);
 }
-
 // ================== CLIENTS EN CAISSE ==================
 function renderClientSelect() {
   const select = document.getElementById("client-select");
