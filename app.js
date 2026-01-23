@@ -5,7 +5,7 @@ const SHEET_URL = "https://script.google.com/macros/s/AKfycbwIuoPvoE_1DcLGWY5aoE
 const defaultProducts = [
   { id: 1,  name: "Bar à Musc",        price: 8000, stock: 99 },
   { id: 2,  name: "Bar à Parfum",      price: 8000, stock: 68 },
-  { id: 3,  name: "Bar à Thiouraye",   price: 3000, stock: 111 },
+  { id: 3,  name: "Bar à Thiouraye",   price: 5000, stock: 111 },
 
   { id: 4,  name: "Brume BUTTERFLY",   price: 8000, stock: 40 },
   { id: 5,  name: "Brume NEFERTITI",   price: 8000, stock: 26 },
