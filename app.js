@@ -32,6 +32,44 @@ const PERFUME_LEVELS = {
   out:  { label: "Rupture",    className: "perfume-out" }
 };
 
+// ---------- Anniversaires (helpers) ----------
+
+function isClientBirthdaySoon(client, hours = 72) {
+  if (!client || !client.birthdate) return false;
+
+  const b = new Date(client.birthdate);
+  if (isNaN(b.getTime())) return false;
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+
+  // prochain anniversaire (cette année ou l'année prochaine)
+  let nextBirthday = new Date(currentYear, b.getMonth(), b.getDate());
+  if (nextBirthday < now) {
+    nextBirthday = new Date(currentYear + 1, b.getMonth(), b.getDate());
+  }
+
+  const diffMs = nextBirthday - now;
+  const diffHours = diffMs / (1000 * 60 * 60);
+
+  return diffHours >= 0 && diffHours <= hours;
+}
+
+function formatBirthdateShort(birthdate) {
+  if (!birthdate) return "—";
+  const d = new Date(birthdate);
+  if (isNaN(d.getTime())) return birthdate;
+  // on affiche juste jour/mois
+  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
+}
+
+function getSelectedClient() {
+  const select = document.getElementById("client-select");
+  if (!select || !select.value) return null;
+  const id = Number(select.value);
+  return clients.find(c => c.id === id) || null;
+}
+
 // ================== LOCAL STORAGE HELPERS (SIMPLIFIÉS) ==================
 
 // Produits : on part juste des valeurs par défaut,
@@ -144,23 +182,24 @@ function fetchClientsFromSheet() {
   const script = document.createElement("script");
 
   window[callbackName] = function (data) {
-    try {
-      if (data && Array.isArray(data.clients)) {
-        clients = data.clients.map(c => ({
-          id: Number(c.id),
-          name: c.name,
-          phone: c.phone,
-          createdAt: c.createdAt || new Date().toISOString()
-        }));
-        saveClients(clients);
-      }
-    } finally {
-      renderClientSelect();
-      renderClientsTable();
-      delete window[callbackName];
-      script.remove();
+  try {
+    if (data && Array.isArray(data.clients)) {
+      clients = data.clients.map(c => ({
+        id: Number(c.id),
+        name: c.name,
+        phone: c.phone,
+        createdAt: c.createdAt || new Date().toISOString(),
+        birthdate: c.birthdate || ""   // 👈 nouveau
+      }));
+      saveClients(clients);
     }
-  };
+  } finally {
+    renderClientSelect();
+    renderClientsTable();
+    delete window[callbackName];
+    script.remove();
+  }
+};
 
   script.src = `${SHEET_URL}?action=getClients&callback=${callbackName}`;
   script.onerror = function () {
@@ -440,7 +479,6 @@ function renderProductsForSale() {
   });
 }
 
-// -------- PANIER --------
 
 // -------- PANIER --------
 
@@ -511,46 +549,43 @@ function calculateCartTotals() {
 
   let baseTotal = 0;
 
-  // Promo 1 : produits à 8000 → 2 = -1000
-  let promo8000Qty = 0;
-
-  // Promo 2 : Bar à Thiouraye (id=3, basePrice=3000) → 2 = -1000 (2 pour 5000)
-  let thiourayeQty = 0;
+  // Pour les promos standard
+  let promo8000Qty = 0;     // promo 2x8000 = -1000
+  let thiourayeQty = 0;     // promo Bar à Thiouraye 2x3000 = -1000
 
   cart.forEach(item => {
     baseTotal += item.price * item.qty;
 
-    // Promo 8000 (ancienne promo)
-    if (!wholesaleMode && !item.wholesale && item.basePrice === 8000) {
-      promo8000Qty += item.qty;
-    }
+    if (!wholesaleMode && !item.wholesale) {
+      // Promo classique 2x8000 = -1000
+      if (item.basePrice === 8000) {
+        promo8000Qty += item.qty;
+      }
 
-    // Promo Bar à Thiouraye : on se base sur l'id (3) + basePrice 3000
-    if (
-      !wholesaleMode &&
-      !item.wholesale &&
-      item.productId === 3 &&      // Bar à Thiouraye
-      item.basePrice === 3000
-    ) {
-      thiourayeQty += item.qty;
+      // Promo Bar à Thiouraye : basePrice 3000, nom contient "Thiouraye"
+      if (
+        item.basePrice === 3000 &&
+        item.name &&
+        item.name.toLowerCase().includes("thiouraye")
+      ) {
+        thiourayeQty += item.qty;
+      }
     }
   });
 
+  // 🔹 Promo catalogue (2x8000, 2xThiouraye)
   let promoDiscount = 0;
   if (!wholesaleMode) {
-    // 2 produits à 8000 → -1000
     promoDiscount += Math.floor(promo8000Qty / 2) * 1000;
-
-    // 2 Thiouraye à 3000 → -1000 (2 pour 5000)
     promoDiscount += Math.floor(thiourayeQty / 2) * 1000;
   }
 
+  // 🔹 Remise manuelle
   const discountInput = document.getElementById("cart-discount");
   let manualDiscount = 0;
 
   if (discountInput) {
     if (wholesaleMode) {
-      // en gros → remise manuelle désactivée
       discountInput.disabled = true;
       discountInput.value = "0";
     } else {
@@ -559,17 +594,38 @@ function calculateCartTotals() {
     }
   }
 
-  let finalTotal = baseTotal - promoDiscount - manualDiscount;
+  // 🔹 Remise anniversaire -30% (client sélectionné + anniversaire dans 72h)
+  const select = document.getElementById("client-select");
+  let birthdayDiscount = 0;
+  let isBirthdayClient = false;
+
+  if (!wholesaleMode && select && select.value) {
+    const clientId = select.value;
+    const client = clients.find(c => c.id == clientId);
+    if (client && isClientBirthdaySoon(client)) {
+      isBirthdayClient = true;
+
+      // 👉 Les autres remises ne s'accumulent PAS
+      promoDiscount = 0;
+      manualDiscount = 0;
+
+      birthdayDiscount = Math.round(baseTotal * 0.30);
+    }
+  }
+
+  let finalTotal =
+    baseTotal - promoDiscount - manualDiscount - birthdayDiscount;
   if (finalTotal < 0) finalTotal = 0;
 
   return {
     baseTotal,
     promoDiscount,
     manualDiscount,
+    birthdayDiscount,
+    isBirthdayClient,
     finalTotal
   };
 }
-
 function renderCart() {
   const container = document.getElementById("cart-list");
   const totalSpan = document.getElementById("cart-total");
@@ -684,11 +740,25 @@ function openAddClientModal() {
 
   const phone = prompt("Téléphone du client (optionnel) :") || "";
 
+  const birthdateInput = prompt(
+    "Date de naissance (optionnel, format AAAA-MM-JJ, ex : 1995-08-21) :"
+  ) || "";
+
+  let birthdate = "";
+  if (birthdateInput.trim()) {
+    // on stocke en ISO si possible
+    const d = new Date(birthdateInput.trim());
+    if (!isNaN(d.getTime())) {
+      birthdate = d.toISOString().slice(0, 10); // "YYYY-MM-DD"
+    }
+  }
+
   const newClient = {
     id: Date.now(),
     name: name.trim(),
     phone: phone.trim(),
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    birthdate
   };
 
   clients.push(newClient);
@@ -733,7 +803,7 @@ function confirmSale() {
     sendStockToSheet(products);
   }
 
-  // 3) Totaux (promo + remise manuelle)
+  // 3) Totaux (promo catalogue + Thiouraye + remise manuelle + anniversaire)
   const totals = calculateCartTotals();
 
   // Mode de paiement
@@ -743,7 +813,7 @@ function confirmSale() {
   // Vente en gros ?
   const wholesaleMode = document.getElementById("wholesale-mode")?.checked;
 
-  // 4) Client & fidélité
+  // 4) Client & fidélité (sauf gros & sauf anniversaire)
   const select = document.getElementById("client-select");
   let clientId = null;
   let clientName = "";
@@ -751,8 +821,7 @@ function confirmSale() {
   let loyaltyDiscount = 0;
   let loyaltyReasonText = "";
 
-  if (select && select.value && !wholesaleMode) {
-    // En mode GROS : pas de remise fidélité
+  if (select && select.value && !wholesaleMode && !totals.isBirthdayClient) {
     clientId = Number(select.value);
     const client = clients.find(c => c.id === clientId);
     if (client) {
@@ -761,7 +830,7 @@ function confirmSale() {
 
       let clientTotalBefore = 0;
       sales.forEach(s => {
-        if (s.clientId === clientId) clientTotalBefore += s.total || 0;
+        if (s.clientId == clientId) clientTotalBefore += s.total || 0;
       });
 
       const totalBeforeLoyalty = totals.finalTotal;
@@ -777,39 +846,48 @@ function confirmSale() {
     }
   }
 
-  // 5) Remise totale + raison
+  // 5) Remises totales & raison
   const discountReasonInput = document.getElementById("cart-discount-reason");
   const userReason = discountReasonInput ? discountReasonInput.value.trim() : "";
 
   let promoDiscount = totals.promoDiscount || 0;
   let manualDiscount = totals.manualDiscount || 0;
+  let birthdayDiscount = totals.birthdayDiscount || 0;
 
   if (wholesaleMode) {
-    // En gros : pas de remises
+    // En gros → aucune remise auto ni anniversaire ni fidélité
     promoDiscount = 0;
     manualDiscount = 0;
+    birthdayDiscount = 0;
     loyaltyDiscount = 0;
   }
 
   let fullDiscountReason = userReason;
-  if (promoDiscount > 0) {
+
+  if (birthdayDiscount > 0) {
     if (fullDiscountReason) fullDiscountReason += " + ";
-    fullDiscountReason += "promo 2x8000";
-  }
-  if (loyaltyDiscount > 0) {
-    if (fullDiscountReason) fullDiscountReason += " + ";
-    fullDiscountReason += loyaltyReasonText;
-  }
-  if (wholesaleMode) {
-    if (fullDiscountReason) fullDiscountReason += " + ";
-    fullDiscountReason += "vente en gros";
+    fullDiscountReason += "remise anniversaire -30%";
+  } else {
+    if (promoDiscount > 0) {
+      if (fullDiscountReason) fullDiscountReason += " + ";
+      fullDiscountReason += "promo catalogue";
+    }
+    if (loyaltyDiscount > 0) {
+      if (fullDiscountReason) fullDiscountReason += " + ";
+      fullDiscountReason += loyaltyReasonText;
+    }
+    if (wholesaleMode) {
+      if (fullDiscountReason) fullDiscountReason += " + ";
+      fullDiscountReason += "vente en gros";
+    }
   }
 
   const baseTotal = totals.baseTotal;
-  const totalDiscount = promoDiscount + manualDiscount + loyaltyDiscount;
+  const totalDiscount =
+    promoDiscount + manualDiscount + loyaltyDiscount + birthdayDiscount;
   const finalTotal = Math.max(0, baseTotal - totalDiscount);
 
-  // 6) Construire l'objet vente (avec prix pour le ticket)
+  // 6) Construire l'objet vente
   const sale = {
     id: Date.now(),
     date: new Date().toISOString(),
@@ -825,7 +903,7 @@ function confirmSale() {
           : 0;
       return {
         productId: item.productId,
-        name: product ? product.name : (item.name || ""),
+        name: product ? product.name : item.name || "",
         qty: item.qty,
         price: unitPrice,
         lineTotal: unitPrice * item.qty
@@ -835,6 +913,7 @@ function confirmSale() {
     promoDiscount,
     manualDiscount,
     loyaltyDiscount,
+    birthdayDiscount,
     discountAmount: totalDiscount,
     discountReason: fullDiscountReason,
     clientId,
@@ -843,13 +922,13 @@ function confirmSale() {
     wholesale: wholesaleMode ? true : false
   };
 
-  // 7) Mise à jour client local (si pas vente en gros)
+  // 7) Mise à jour infos client (pas en gros, pas besoin de distinguer anniversaire)
   if (clientId && !wholesaleMode) {
     const client = clients.find(c => c.id === clientId);
     if (client) {
       let totalSpent = 0;
       sales.forEach(s => {
-        if (s.clientId === clientId) totalSpent += s.total || 0;
+        if (s.clientId == clientId) totalSpent += s.total || 0;
       });
       totalSpent += finalTotal;
 
@@ -868,8 +947,8 @@ function confirmSale() {
     sendSaleToSheet(sale);
   }
 
-  // 9) Préparer le ticket pour le bouton "Imprimer le ticket"
-  lastTicketSale = sale;   // 👈 utilisé par printTicket()
+  // 9) Ticket
+  lastTicketSale = sale;
 
   // 10) Nettoyage
   clearCart();
@@ -878,7 +957,6 @@ function confirmSale() {
 
   alert("Vente enregistrée !");
 }
-
 // ================== TICKET DE CAISSE ==================
 function openReceiptWindow(sale) {
   const boutiqueName = "BSK";
@@ -1679,18 +1757,23 @@ function renderClientsTable() {
 
   if (list.length === 0) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="4">Aucun client trouvé.</td>`;
+    tr.innerHTML = `<td colspan="5">Aucun client trouvé.</td>`;
     tbody.appendChild(tr);
+
+    // mettre à jour la section anniversaires
+    renderBirthdaySection();
     return;
   }
 
   list.forEach(c => {
     const totalSpent = computeClientTotal(c.id);
+    const soon = isClientBirthdaySoon(c);
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${c.name}</td>
+      <td>${c.name}${soon ? " 🎂" : ""}</td>
       <td>${c.phone || ""}</td>
+      <td>${formatBirthdateShort(c.birthdate)}</td>
       <td>${totalSpent} FCFA</td>
       <td>
         <button class="secondary-btn" onclick="openClientPopup('${c.id}')">
@@ -1700,7 +1783,120 @@ function renderClientsTable() {
     `;
     tbody.appendChild(tr);
   });
+
+  // mettre à jour la section "Anniversaires dans 72h"
+  renderBirthdaySection();
 }
+
+// ================== ANNIVERSAIRES CLIENTS ==================
+
+function parseClientBirthdate(client) {
+  if (!client) return null;
+
+  // on accepte plusieurs noms de champ, mais on privilégie "birthdate"
+  const raw =
+    client.birthdate ||
+    client.birthDate ||
+    client.dateOfBirth ||
+    client.date_naissance;
+
+  if (!raw) return null;
+
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return null;
+  return d;
+}
+
+/**
+ * true si l'anniversaire du client est dans les 72 prochaines heures
+ * (entre maintenant et +72h)
+ */
+function isClientBirthdaySoon(client) {
+  const dob = parseClientBirthdate(client);
+  if (!dob) return false;
+
+  const now = new Date();
+  const year = now.getFullYear();
+
+  // anniversaire cette année
+  let nextBirthday = new Date(year, dob.getMonth(), dob.getDate());
+
+  // s'il est déjà passé → on prend l'année prochaine
+  if (nextBirthday < now) {
+    nextBirthday.setFullYear(year + 1);
+  }
+
+  const diffMs = nextBirthday.getTime() - now.getTime();
+  const diffHours = diffMs / (1000 * 60 * 60);
+
+  return diffHours >= 0 && diffHours <= 72;
+}
+
+/**
+ * Affichage d'une date de naissance en format court "JJ/MM"
+ */
+function formatBirthdateShort(raw) {
+  if (!raw) return "";
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("fr-FR", {
+    day: "2-digit",
+    month: "2-digit"
+  });
+}
+
+function renderBirthdaySection() {
+  const container = document.getElementById("birthday-list");
+  if (!container) return;
+
+  const birthdayClients = clients.filter(c => isClientBirthdaySoon(c));
+
+  if (birthdayClients.length === 0) {
+    container.innerHTML = `<p>Aucun anniversaire dans les 72 prochaines heures.</p>`;
+    return;
+  }
+
+  container.innerHTML = "";
+
+  birthdayClients.forEach(c => {
+    const div = document.createElement("div");
+    div.className = "birthday-card";
+    div.innerHTML = `
+      <strong>${c.name}</strong>${c.phone ? " (" + c.phone + ")" : ""}<br>
+      Anniversaire : ${formatBirthdateShort(c.birthdate)}<br>
+      <button onclick="sendBirthdayMessage('${c.id}')">
+        Envoyer un message
+      </button>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function sendBirthdayMessage(clientId) {
+  const c = clients.find(cl => cl.id == clientId);
+  if (!c) {
+    alert("Client introuvable.");
+    return;
+  }
+
+  const baseMessage =
+    `Bonjour ${c.name} 🎉\n\n` +
+    `Toute l'équipe BSK te souhaite un très joyeux anniversaire ! 🥳\n` +
+    `Pour l'occasion, tu bénéficies d'une remise exceptionnelle de -30% sur toute la boutique, ` +
+    `valable 72h à partir d'aujourd'hui.\n\n` +
+    `À très vite chez BSK 💛`;
+
+  // Si numéro, on tente d'ouvrir WhatsApp
+  if (c.phone) {
+    const phoneClean = c.phone.replace(/[^0-9]/g, "");
+    const url = `https://wa.me/${phoneClean}?text=${encodeURIComponent(baseMessage)}`;
+    window.open(url, "_blank");
+  } else {
+    // Sinon on affiche juste le texte pour copier
+    alert("Message à envoyer :\n\n" + baseMessage);
+  }
+}
+
 function computeClientTotal(clientId) {
   let sum = 0;
 

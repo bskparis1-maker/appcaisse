@@ -208,33 +208,41 @@
 
     <!-- ============ VUE CLIENTS ============ -->
     <section id="view-clients" class="view hidden">
-      <h2>Clients</h2>
+  <h2>Clients</h2>
 
-      <input
-        type="text"
-        id="client-search"
-        placeholder="Rechercher un client (nom ou téléphone)…"
-        oninput="renderClientsTable()"
-      />
+  <input
+    type="text"
+    id="client-search"
+    placeholder="Rechercher un client (nom ou téléphone)…"
+    oninput="renderClientsTable()"
+  />
 
-      <div style="margin-top:6px; margin-bottom:8px;">
-        <button class="primary-btn" onclick="openAddClientModal()">
-          Ajouter un client
-        </button>
-      </div>
+  <div style="margin-top:6px; margin-bottom:8px;">
+    <button class="primary-btn" onclick="openAddClientModal()">
+      Ajouter un client
+    </button>
+  </div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Nom</th>
-            <th>Téléphone</th>
-            <th>Total achats</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="clients-table-body"></tbody>
-      </table>
-    </section>
+  <!-- TABLEAU CLIENTS -->
+  <table>
+    <thead>
+      <tr>
+        <th>Nom</th>
+        <th>Téléphone</th>
+        <th>Date de naissance</th>
+        <th>Total dépensé</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="clients-table-body"></tbody>
+  </table>
+
+  <!-- BLOC ANNIVERSAIRES 72H -->
+  <div class="card" style="margin-top:20px; padding:12px; border:1px solid #e5e7eb; border-radius:8px;">
+    <h3 style="margin-top:0;">Anniversaires dans les 72h</h3>
+    <div id="birthday-list" class="birthday-list"></div>
+  </div>
+</section>
 
     <!-- ============ VUE PRODUITS (STOCK) ============ -->
     <section id="view-produits" class="view hidden">
