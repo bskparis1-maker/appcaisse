@@ -412,6 +412,17 @@ function getPromoPrice(basePrice) {
   return basePrice;
 }
 
+function isPromoActiveNow() {
+  const promo = getCurrentPromo();
+  if (!promo.start || !promo.end) return false;
+
+  const now = new Date();
+  const start = new Date(promo.start + "T00:00:00");
+  const end = new Date(promo.end + "T23:59:59");
+
+  return now >= start && now <= end;
+}
+
 function openPromoModal() {
   const popup = document.getElementById("promo-popup");
   if (!popup) return;
@@ -546,39 +557,45 @@ function addToCart(productId) {
 
 function calculateCartTotals() {
   const wholesaleMode = document.getElementById("wholesale-mode")?.checked;
-
+  const promoPeriodActive = isPromoActiveNow(); // ✅ promo globale active ?
+	
   let baseTotal = 0;
 
   // Pour les promos standard
   let promo8000Qty = 0;     // promo 2x8000 = -1000
   let thiourayeQty = 0;     // promo Bar à Thiouraye 2x3000 = -1000
 
-  cart.forEach(item => {
-    baseTotal += item.price * item.qty;
+ cart.forEach(item => {
+  baseTotal += item.price * item.qty;
 
-    if (!wholesaleMode && !item.wholesale) {
-      // Promo classique 2x8000 = -1000
-      if (item.basePrice === 8000) {
-        promo8000Qty += item.qty;
-      }
-
-      // Promo Bar à Thiouraye : basePrice 3000, nom contient "Thiouraye"
-      if (
-        item.basePrice === 3000 &&
-        item.name &&
-        item.name.toLowerCase().includes("thiouraye")
-      ) {
-        thiourayeQty += item.qty;
-      }
+  if (!wholesaleMode && !item.wholesale) {
+    // Promo classique 2x8000 = -1000 (désactivée si promo globale active)
+    if (!promoPeriodActive && item.basePrice === 8000) {
+      promo8000Qty += item.qty;
     }
-  });
+
+    // Promo Bar à Thiouraye : basePrice 3000, nom contient "Thiouraye"
+    if (
+      item.basePrice === 3000 &&
+      item.name &&
+      item.name.toLowerCase().includes("thiouraye")
+    ) {
+      thiourayeQty += item.qty;
+    }
+  }
+});
 
   // 🔹 Promo catalogue (2x8000, 2xThiouraye)
-  let promoDiscount = 0;
-  if (!wholesaleMode) {
+let promoDiscount = 0;
+if (!wholesaleMode) {
+  // ✅ 2x8000 désactivée pendant la promo globale
+  if (!promoPeriodActive) {
     promoDiscount += Math.floor(promo8000Qty / 2) * 1000;
-    promoDiscount += Math.floor(thiourayeQty / 2) * 1000;
   }
+
+  // ✅ Thiouraye reste active (tu peux l’enlever aussi si tu veux)
+  promoDiscount += Math.floor(thiourayeQty / 2) * 1000;
+}
 
   // 🔹 Remise manuelle
   const discountInput = document.getElementById("cart-discount");
