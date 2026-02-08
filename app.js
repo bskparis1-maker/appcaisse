@@ -375,7 +375,7 @@ function showView(viewName) {
   } else if (viewName === "dashboard") {
     initDashboardDates();
     loadDashboardStats();
-  } else if (viewName === "barparfum") {
+  } else if (viewName === "bar-parfum") {
     renderPerfumeBar();
   }
 }
@@ -751,41 +751,98 @@ function renderClientSelect() {
   }
 }
 
+// ✅ état global : on sait si on ajoute ou si on modifie
+let editingClientId = null;
+
+// ✅ Ouvrir la modale en mode "AJOUT"
 function openAddClientModal() {
-  const name = prompt("Nom du client :");
-  if (!name || !name.trim()) return;
+  editingClientId = null;
 
-  const phone = prompt("Téléphone du client (optionnel) :") || "";
+  document.getElementById("client-form-title").textContent = "Ajouter un client";
+  document.getElementById("client-form-name").value = "";
+  document.getElementById("client-form-phone").value = "";
+  document.getElementById("client-form-birthdate").value = "";
 
-  const birthdateInput = prompt(
-    "Date de naissance (optionnel, format AAAA-MM-JJ, ex : 1995-08-21) :"
-  ) || "";
+  document.getElementById("client-form-modal").classList.remove("hidden");
+}
 
-  let birthdate = "";
-  if (birthdateInput.trim()) {
-    // on stocke en ISO si possible
-    const d = new Date(birthdateInput.trim());
-    if (!isNaN(d.getTime())) {
-      birthdate = d.toISOString().slice(0, 10); // "YYYY-MM-DD"
-    }
+// ✅ Ouvrir la modale en mode "MODIF"
+function openEditClientModal(clientId) {
+  const c = clients.find(x => x.id == clientId);
+  if (!c) return;
+
+  editingClientId = c.id;
+
+  document.getElementById("client-form-title").textContent = "Modifier le client";
+  document.getElementById("client-form-name").value = c.name || "";
+  document.getElementById("client-form-phone").value = c.phone || "";
+  document.getElementById("client-form-birthdate").value = c.birthdate || "";
+
+  document.getElementById("client-form-modal").classList.remove("hidden");
+}
+
+// ✅ Fermer la modale
+function closeClientFormModal() {
+  document.getElementById("client-form-modal").classList.add("hidden");
+}
+
+// ✅ Enregistrer (ajout OU modification)
+function saveClientFromModal() {
+  const name = (document.getElementById("client-form-name").value || "").trim();
+  const phone = (document.getElementById("client-form-phone").value || "").trim();
+  const birthdate = document.getElementById("client-form-birthdate").value || "";
+
+  if (!name) {
+    alert("Merci de renseigner le nom du client.");
+    return;
   }
 
-  const newClient = {
-    id: Date.now(),
-    name: name.trim(),
-    phone: phone.trim(),
-    createdAt: new Date().toISOString(),
-    birthdate
-  };
+  // AJOUT
+  if (!editingClientId) {
+    const newClient = {
+      id: Date.now(),
+      name,
+      phone,
+      createdAt: new Date().toISOString(),
+      birthdate
+    };
 
-  clients.push(newClient);
-  saveClients(clients);
+    clients.push(newClient);
+    saveClients(clients);
+    sendClientToSheet(newClient);
 
-  sendClientToSheet(newClient);
+    alert("Client ajouté.");
+  } 
+  // MODIFICATION
+  else {
+    const c = clients.find(x => x.id == editingClientId);
+    if (!c) return;
+
+    c.name = name;
+    c.phone = phone;
+    c.birthdate = birthdate;
+
+    saveClients(clients);
+
+    // 🔥 ici : il faudra une route Sheets pour update (sinon local seulement)
+    // sendClientUpdateToSheet(c);
+
+    alert("Client modifié.");
+  }
+
+  closeClientFormModal();
   renderClientSelect();
   renderClientsTable();
+}
 
-  alert("Client ajouté.");
+function sendClientUpdateToSheet(client) {
+  const payload = encodeURIComponent(JSON.stringify({ client }));
+  const url = `${SHEET_URL}?action=updateClient&payload=${payload}`;
+
+  fetch(url)
+    .then(r => r.text())
+    .then(txt => console.log("updateClient ->", txt))
+    .catch(err => console.error("updateClient error:", err));
 }
 
 // ================== CONFIRMATION VENTE ==================
@@ -1793,10 +1850,13 @@ function renderClientsTable() {
       <td>${formatBirthdateShort(c.birthdate)}</td>
       <td>${totalSpent} FCFA</td>
       <td>
-        <button class="secondary-btn" onclick="openClientPopup('${c.id}')">
-          Détails
-        </button>
-      </td>
+  <button class="secondary-btn" onclick="openClientPopup('${c.id}')">
+    Informations
+  </button>
+  <button class="primary-btn" onclick="openEditClientModal('${c.id}')">
+    Modifier
+  </button>
+</td>
     `;
     tbody.appendChild(tr);
   });
