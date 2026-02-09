@@ -1,130 +1,112 @@
 // ================== CONFIG GOOGLE SHEETS ==================
-const SHEET_URL = "https://script.google.com/macros/s/AKfycbwIuoPvoE_1DcLGWY5aoEdAHHM1l_2eoqL5VReGyF0P8ctbzmvQwt6tDcgSzRfxcbw/exec";
+const SHEET_URL =
+  "https://script.google.com/macros/s/AKfycbwIuoPvoE_1DcLGWY5aoEdAHHM1l_2eoqL5VReGyF0P8ctbzmvQwt6tDcgSzRfxcbw/exec";
 
 // ================== PRODUITS CAISSE ==================
 const defaultProducts = [
-  { id: 1,  name: "Bar à Musc",        price: 8000, stock: 99 },
-  { id: 2,  name: "Bar à Parfum",      price: 8000, stock: 68 },
-  { id: 3,  name: "Bar à Thiouraye",   price: 3000, stock: 111 },
+  { id: 1, name: "Bar à Musc", price: 8000, stock: 99 },
+  { id: 2, name: "Bar à Parfum", price: 8000, stock: 68 },
+  { id: 3, name: "Bar à Thiouraye", price: 3000, stock: 111 },
 
-  { id: 4,  name: "Brume BUTTERFLY",   price: 8000, stock: 40 },
-  { id: 5,  name: "Brume NEFERTITI",   price: 8000, stock: 26 },
-  { id: 6,  name: "Brume SUMMER",      price: 8000, stock: 22 },
-  { id: 7,  name: "Brume CRUSH",       price: 8000, stock: 19 },
+  { id: 4, name: "Brume BUTTERFLY", price: 8000, stock: 40 },
+  { id: 5, name: "Brume NEFERTITI", price: 8000, stock: 26 },
+  { id: 6, name: "Brume SUMMER", price: 8000, stock: 22 },
+  { id: 7, name: "Brume CRUSH", price: 8000, stock: 19 },
 
-  { id: 8,  name: "Musc BUTTERFLY",    price: 8000, stock: 8 },
-  { id: 9,  name: "Musc NEFERTITI",    price: 8000, stock: 2 },
-  { id: 10, name: "Musc CRUSH",        price: 8000, stock: 2 },
-  { id: 11, name: "Musc SUMMER",       price: 8000, stock: 5 },
+  { id: 8, name: "Musc BUTTERFLY", price: 8000, stock: 8 },
+  { id: 9, name: "Musc NEFERTITI", price: 8000, stock: 2 },
+  { id: 10, name: "Musc CRUSH", price: 8000, stock: 2 },
+  { id: 11, name: "Musc SUMMER", price: 8000, stock: 5 },
 
-  { id: 12, name: "Jardin suspendu",   price: 5000, stock: 11 },
-  { id: 13, name: "Nuit de noce",      price: 5000, stock: 3 },
-  { id: 14, name: "Figue d’amour",     price: 5000, stock: 2 },
-  { id: 15, name: "Linge de maman",    price: 5000, stock: 2 },
-  { id: 16, name: "Bonbon",            price: 5000, stock: 2 },
-  { id: 17, name: "Sweet Cotton",      price: 5000, stock: 0 }
+  { id: 12, name: "Jardin suspendu", price: 5000, stock: 11 },
+  { id: 13, name: "Nuit de noce", price: 5000, stock: 3 },
+  { id: 14, name: "Figue d’amour", price: 5000, stock: 2 },
+  { id: 15, name: "Linge de maman", price: 5000, stock: 2 },
+  { id: 16, name: "Bonbon", price: 5000, stock: 2 },
+  { id: 17, name: "Sweet Cotton", price: 5000, stock: 0 }
 ];
 
 // ================== BAR À PARFUM ==================
 const PERFUME_LEVELS = {
   full: { label: "1L ou plus", className: "perfume-full" },
-  half: { label: "0,5L",       className: "perfume-half" },
-  out:  { label: "Rupture",    className: "perfume-out" }
+  half: { label: "0,5L", className: "perfume-half" },
+  out: { label: "Rupture", className: "perfume-out" }
 };
 
-// ---------- Anniversaires (helpers) ----------
+// ================== ANNIVERSAIRES (VERSION UNIQUE) ==================
+function parseClientBirthdate(client) {
+  const raw =
+    client?.birthdate ||
+    client?.birthDate ||
+    client?.dateOfBirth ||
+    client?.date_naissance;
+
+  if (!raw) return null;
+  const d = new Date(raw);
+  return isNaN(d.getTime()) ? null : d;
+}
 
 function isClientBirthdaySoon(client, hours = 72) {
-  if (!client || !client.birthdate) return false;
-
-  const b = new Date(client.birthdate);
-  if (isNaN(b.getTime())) return false;
+  const dob = parseClientBirthdate(client);
+  if (!dob) return false;
 
   const now = new Date();
-  const currentYear = now.getFullYear();
+  const year = now.getFullYear();
 
-  // prochain anniversaire (cette année ou l'année prochaine)
-  let nextBirthday = new Date(currentYear, b.getMonth(), b.getDate());
-  if (nextBirthday < now) {
-    nextBirthday = new Date(currentYear + 1, b.getMonth(), b.getDate());
-  }
+  let nextBirthday = new Date(year, dob.getMonth(), dob.getDate());
+  if (nextBirthday < now) nextBirthday.setFullYear(year + 1);
 
-  const diffMs = nextBirthday - now;
-  const diffHours = diffMs / (1000 * 60 * 60);
-
+  const diffHours = (nextBirthday - now) / (1000 * 60 * 60);
   return diffHours >= 0 && diffHours <= hours;
 }
 
-function formatBirthdateShort(birthdate) {
-  if (!birthdate) return "—";
-  const d = new Date(birthdate);
-  if (isNaN(d.getTime())) return birthdate;
-  // on affiche juste jour/mois
+function formatBirthdateShort(raw) {
+  if (!raw) return "—";
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
 }
 
-function getSelectedClient() {
-  const select = document.getElementById("client-select");
-  if (!select || !select.value) return null;
-  const id = Number(select.value);
-  return clients.find(c => c.id === id) || null;
-}
-
 // ================== LOCAL STORAGE HELPERS (SIMPLIFIÉS) ==================
-
-// Produits : on part juste des valeurs par défaut,
-// puis fetchStockFromSheet() viendra les mettre à jour depuis Sheets.
 function loadProducts() {
   return defaultProducts.slice();
 }
-
 function saveProducts(products) {
-  // On pourrait stocker en local si on veut, mais ce n'est pas obligatoire
-  // car la "vérité" vient de Google Sheets. On laisse vide pour simplifier.
-  // localStorage.setItem("products", JSON.stringify(products));
+  // optionnel : localStorage.setItem("products", JSON.stringify(products));
 }
-
-// Ventes : on ne lit PAS le localStorage, on laisse la liste vide au départ,
-// puis fetchSalesFromSheet() charge les ventes depuis Google Sheets.
 function loadSales() {
   return [];
 }
-
 function saveSales(sales) {
-  // Pareil, on pourrait garder une copie en local,
-  // mais ce n'est pas nécessaire pour la synchro multi-appareils.
-  // localStorage.setItem("sales", JSON.stringify(sales));
+  // optionnel : localStorage.setItem("sales", JSON.stringify(sales));
 }
-
-// Clients : idem, tout vient de Google Sheets -> pas besoin du cache local.
 function loadClients() {
   return [];
 }
-
 function saveClients(clients) {
-  // localStorage.setItem("clients", JSON.stringify(clients));
+  // optionnel : localStorage.setItem("clients", JSON.stringify(clients));
 }
 
 // ================== ÉTAT GLOBAL ==================
 let products = loadProducts();
 let sales = loadSales();
 let clients = loadClients();
-let cart = [];    // [{ productId, qty }]
+let cart = []; // [{ productId, qty, price, ... }]
 let perfumes = []; // [{ name, level }]
 let dashboardChart = null;
-let lastTicketSale = null; // dernière vente pour le bouton "Imprimer le ticket"
+let lastTicketSale = null;
 let stockHistory = [];
 let expenses = [];
 
 // ================== STOCK <-> SHEETS ==================
 function fetchStockFromSheet() {
   const callbackName = "onStockFromSheet_" + Date.now();
-
   const script = document.createElement("script");
+
   window[callbackName] = function (data) {
     try {
       if (data && Array.isArray(data.products) && data.products.length > 0) {
-        products = data.products.map(p => ({
+        products = data.products.map((p) => ({
           id: Number(p.id),
           name: p.name,
           price: Number(p.price),
@@ -136,8 +118,9 @@ function fetchStockFromSheet() {
       renderProductsForSale();
       renderProductsTable();
       renderCart();
-
       fetchSalesFromSheet();
+      delete window[callbackName];
+      script.remove();
     }
   };
 
@@ -160,7 +143,6 @@ function sendStockToSheet(productsToSend) {
   iframe.style.display = "none";
   iframe.src = url;
   document.body.appendChild(iframe);
-
   setTimeout(() => iframe.remove(), 5000);
 }
 
@@ -173,7 +155,6 @@ function sendClientToSheet(client) {
   iframe.style.display = "none";
   iframe.src = url;
   document.body.appendChild(iframe);
-
   setTimeout(() => iframe.remove(), 5000);
 }
 
@@ -182,31 +163,32 @@ function fetchClientsFromSheet() {
   const script = document.createElement("script");
 
   window[callbackName] = function (data) {
-  try {
-    if (data && Array.isArray(data.clients)) {
-      clients = data.clients.map(c => ({
-        id: Number(c.id),
-        name: c.name,
-        phone: c.phone,
-        createdAt: c.createdAt || new Date().toISOString(),
-        birthdate: c.birthdate || ""   // 👈 nouveau
-      }));
-      saveClients(clients);
+    try {
+      if (data && Array.isArray(data.clients)) {
+        clients = data.clients.map((c) => ({
+          id: c.id, // on garde tel quel (string ou number), on comparera avec String()
+          name: c.name || "",
+          phone: c.phone || "",
+          createdAt: c.createdAt || new Date().toISOString(),
+          birthdate: c.birthdate || ""
+        }));
+        saveClients(clients);
+      }
+    } finally {
+      renderClientSelect();
+      renderClientsTable();
+      delete window[callbackName];
+      script.remove();
     }
-  } finally {
-    renderClientSelect();
-    renderClientsTable();
-    delete window[callbackName];
-    script.remove();
-  }
-};
+  };
 
   script.src = `${SHEET_URL}?action=getClients&callback=${callbackName}`;
   script.onerror = function () {
-    console.warn("Erreur chargement clients (local uniquement).");
+    console.warn("Erreur chargement clients.");
     renderClientSelect();
     renderClientsTable();
   };
+
   document.body.appendChild(script);
 }
 
@@ -215,51 +197,50 @@ function sendSaleToSheet(sale) {
   const payload = encodeURIComponent(JSON.stringify({ sale }));
   const url = `${SHEET_URL}?action=sale&payload=${payload}`;
 
-  // On passe par un iframe "invisible" pour éviter les erreurs CORS
   const iframe = document.createElement("iframe");
   iframe.style.display = "none";
   iframe.src = url;
   document.body.appendChild(iframe);
-
   setTimeout(() => iframe.remove(), 5000);
 }
 
 // ================== VENTES <-> SHEETS ==================
 function fetchSalesFromSheet() {
   const debugEl = document.getElementById("sales-debug");
-  if (debugEl) {
-    debugEl.textContent = "Connexion à Google Sheets…";
-  }
+  if (debugEl) debugEl.textContent = "Connexion à Google Sheets…";
 
   const callbackName = "onSalesFromSheet_" + Date.now();
   const script = document.createElement("script");
 
   window[callbackName] = function (data) {
-  console.log("🔵 Réponse brute getSales:", data);
     try {
       if (data && Array.isArray(data.sales)) {
-        sales = data.sales.map(s => {
+        sales = data.sales.map((s) => {
           const info = s.info || {};
 
-          const namesStr = String(s.productNames || "");
-	  const names = namesStr
-  	  .split(",")
-  	  .map(t => t.trim())
-  	  .filter(Boolean);
+          const names = String(s.productNames || "")
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean);
 
-          const quantitiesStr = String(s.quantities || "");
-          const qtys = quantitiesStr
-          .split(",")
-           .map(t => parseInt(t.trim(), 10) || 0);
+          const qtys = String(s.quantities || "")
+            .split(",")
+            .map((t) => parseInt(t.trim(), 10) || 0);
+
+          // Optionnel : si ton Apps Script renvoie unitPrices (ex: "8000,5000")
+          const unitPrices = String(s.unitPrices || "")
+            .split(",")
+            .map((t) => Number(t.trim()) || 0);
 
           const items = names.map((name, index) => ({
             name,
-            qty: qtys[index] || 0
+            qty: qtys[index] || 0,
+            price: unitPrices[index] || 0
           }));
 
           return {
-            id: s.id,
-            date: s.date,                       // "YYYY-MM-DDTHH:mm:ss"
+            id: s.id, // souvent string dans Sheets
+            date: s.date,
             total: Number(s.total) || 0,
             items,
             paymentMethod: info.paymentMethod || "cash",
@@ -270,24 +251,18 @@ function fetchSalesFromSheet() {
             clientPhone: info.clientPhone || ""
           };
         });
-  console.log("🟢 Ventes après mapping:", sales);
-
-        // On garde une copie locale si tu veux
-        // saveSales(sales);
 
         if (debugEl) {
-          debugEl.textContent =
-            "Ventes reçues depuis Google Sheets : " + sales.length;
+          debugEl.textContent = "Ventes reçues : " + sales.length;
         }
       } else {
-        if (debugEl) {
-          debugEl.textContent =
-            "Réponse vide ou invalide depuis Google Sheets.";
-        }
+        if (debugEl) debugEl.textContent = "Réponse vide ou invalide.";
       }
     } finally {
       updateSalesViewForSelectedDate();
       renderClientsTable();
+      // si dashboard affiché, on rafraîchit sans casser
+      loadDashboardStats?.();
       delete window[callbackName];
       script.remove();
     }
@@ -296,10 +271,7 @@ function fetchSalesFromSheet() {
   script.src = `${SHEET_URL}?action=getSales&callback=${callbackName}`;
   script.onerror = function () {
     console.warn("Erreur chargement ventes (getSales).");
-    if (debugEl) {
-      debugEl.textContent =
-        "Erreur de connexion à Google Sheets (getSales).";
-    }
+    if (debugEl) debugEl.textContent = "Erreur connexion Google Sheets (getSales).";
     updateSalesViewForSelectedDate();
     renderClientsTable();
   };
@@ -316,6 +288,7 @@ function formatPaymentMethod(method) {
   if (method === "wave") return "Wave";
   return "Espèces";
 }
+
 // ================== BAR À PARFUM <-> SHEETS ==================
 function fetchPerfumesFromSheet() {
   const callbackName = "onPerfumes_" + Date.now();
@@ -324,7 +297,7 @@ function fetchPerfumesFromSheet() {
   window[callbackName] = function (data) {
     try {
       if (data && Array.isArray(data.perfumes)) {
-        perfumes = data.perfumes.map(p => ({
+        perfumes = data.perfumes.map((p) => ({
           name: p.name,
           level: p.level || "full"
         }));
@@ -351,13 +324,12 @@ function sendPerfumesToSheet() {
   iframe.style.display = "none";
   iframe.src = url;
   document.body.appendChild(iframe);
-
   setTimeout(() => iframe.remove(), 5000);
 }
 
 // ================== NAVIGATION ==================
 function showView(viewName) {
-  document.querySelectorAll(".view").forEach(v => v.classList.add("hidden"));
+  document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
   const view = document.getElementById(`view-${viewName}`);
   if (view) view.classList.remove("hidden");
 
@@ -375,15 +347,15 @@ function showView(viewName) {
   } else if (viewName === "dashboard") {
     initDashboardDates();
     loadDashboardStats();
-  } else if (viewName === "bar-parfum") {
+  } else if (viewName === "frais") {
+    renderExpensesTable();
+  } else if (viewName === "barparfum" || viewName === "bar-parfum") {
     renderPerfumeBar();
   }
 }
 
 // ================== CAISSE ==================
-
 // -------- PROMO --------
-
 function getCurrentPromo() {
   try {
     return JSON.parse(localStorage.getItem("promo") || "{}");
@@ -391,7 +363,6 @@ function getCurrentPromo() {
     return {};
   }
 }
-
 function saveCurrentPromo(promo) {
   localStorage.setItem("promo", JSON.stringify(promo));
 }
@@ -403,12 +374,10 @@ function getPromoPrice(basePrice) {
   const now = new Date();
   const start = new Date(promo.start + "T00:00:00");
   const end = new Date(promo.end + "T23:59:59");
-
   if (now < start || now > end) return basePrice;
 
   if (basePrice === 8000) return promo.new8000 || basePrice;
   if (basePrice === 5000) return promo.new5000 || basePrice;
-
   return basePrice;
 }
 
@@ -419,7 +388,6 @@ function isPromoActiveNow() {
   const now = new Date();
   const start = new Date(promo.start + "T00:00:00");
   const end = new Date(promo.end + "T23:59:59");
-
   return now >= start && now <= end;
 }
 
@@ -432,7 +400,6 @@ function openPromoModal() {
   document.getElementById("promo-5000").value = promo.new5000 || 5000;
   document.getElementById("promo-start").value = promo.start || "";
   document.getElementById("promo-end").value = promo.end || "";
-
   popup.classList.remove("hidden");
 }
 
@@ -446,35 +413,27 @@ function savePromo() {
   const p8000 = Number(document.getElementById("promo-8000").value) || 8000;
   const p5000 = Number(document.getElementById("promo-5000").value) || 5000;
   const start = document.getElementById("promo-start").value;
-  const end   = document.getElementById("promo-end").value;
+  const end = document.getElementById("promo-end").value;
 
   if (!start || !end) {
     alert("Merci de définir une date de début et une date de fin.");
     return;
   }
 
-  saveCurrentPromo({
-    start,
-    end,
-    new8000: p8000,
-    new5000: p5000
-  });
-
+  saveCurrentPromo({ start, end, new8000: p8000, new5000: p5000 });
   alert("Promo enregistrée.");
   closePromoPopup();
   renderProductsForSale();
 }
 
 // -------- PRODUITS (AFFICHAGE CAISSE) --------
-
 function renderProductsForSale() {
   const container = document.getElementById("products-list");
   if (!container) return;
   container.innerHTML = "";
 
-  products.forEach(p => {
+  products.forEach((p) => {
     const promoPrice = getPromoPrice(p.price);
-
     const div = document.createElement("div");
     div.className = "product-card";
     div.innerHTML = `
@@ -490,11 +449,9 @@ function renderProductsForSale() {
   });
 }
 
-
 // -------- PANIER --------
-
 function addToCart(productId) {
-  const product = products.find(p => p.id === productId);
+  const product = products.find((p) => p.id === productId);
   if (!product) {
     alert("Produit introuvable.");
     return;
@@ -504,9 +461,8 @@ function addToCart(productId) {
   const qty = parseInt(qtyInput?.value, 10) || 1;
   if (qty <= 0) return;
 
-  // Quantité déjà dans le panier
   const alreadyInCart = cart
-    .filter(item => item.productId === productId)
+    .filter((item) => item.productId === productId)
     .reduce((sum, item) => sum + item.qty, 0);
 
   if (alreadyInCart + qty > product.stock) {
@@ -520,33 +476,27 @@ function addToCart(productId) {
   let wholesale = false;
 
   if (wholesaleMode) {
-    // on demande le prix unitaire pour cette vente
-    const custom = Number(
-      prompt(`Prix unitaire (gros) pour ${product.name} (FCFA) :`)
-    );
-    if (!custom || custom <= 0) {
-      return;
-    }
+    const custom = Number(prompt(`Prix unitaire (gros) pour ${product.name} (FCFA) :`));
+    if (!custom || custom <= 0) return;
     unitPrice = custom;
     wholesale = true;
   }
 
   const existing = cart.find(
-    item =>
+    (item) =>
       item.productId === productId &&
       item.price === unitPrice &&
       item.wholesale === wholesale
   );
 
   if (existing && !wholesale) {
-    // on cumule uniquement en mode normal
     existing.qty += qty;
   } else {
     cart.push({
       productId: product.id,
       name: product.name,
-      basePrice: product.price, // prix catalogue (3000, 5000, 8000…)
-      price: unitPrice,         // prix utilisé (modifiable si gros)
+      basePrice: product.price,
+      price: unitPrice,
       qty,
       wholesale
     });
@@ -557,47 +507,36 @@ function addToCart(productId) {
 
 function calculateCartTotals() {
   const wholesaleMode = document.getElementById("wholesale-mode")?.checked;
-  const promoPeriodActive = isPromoActiveNow(); // ✅ promo globale active ?
-	
+  const promoPeriodActive = isPromoActiveNow();
+
   let baseTotal = 0;
+  let promo8000Qty = 0;
+  let thiourayeQty = 0;
 
-  // Pour les promos standard
-  let promo8000Qty = 0;     // promo 2x8000 = -1000
-  let thiourayeQty = 0;     // promo Bar à Thiouraye 2x3000 = -1000
+  cart.forEach((item) => {
+    baseTotal += item.price * item.qty;
 
- cart.forEach(item => {
-  baseTotal += item.price * item.qty;
+    if (!wholesaleMode && !item.wholesale) {
+      if (!promoPeriodActive && item.basePrice === 8000) {
+        promo8000Qty += item.qty;
+      }
 
-  if (!wholesaleMode && !item.wholesale) {
-    // Promo classique 2x8000 = -1000 (désactivée si promo globale active)
-    if (!promoPeriodActive && item.basePrice === 8000) {
-      promo8000Qty += item.qty;
+      if (
+        item.basePrice === 3000 &&
+        item.name &&
+        item.name.toLowerCase().includes("thiouraye")
+      ) {
+        thiourayeQty += item.qty;
+      }
     }
+  });
 
-    // Promo Bar à Thiouraye : basePrice 3000, nom contient "Thiouraye"
-    if (
-      item.basePrice === 3000 &&
-      item.name &&
-      item.name.toLowerCase().includes("thiouraye")
-    ) {
-      thiourayeQty += item.qty;
-    }
-  }
-});
-
-  // 🔹 Promo catalogue (2x8000, 2xThiouraye)
-let promoDiscount = 0;
-if (!wholesaleMode) {
-  // ✅ 2x8000 désactivée pendant la promo globale
-  if (!promoPeriodActive) {
-    promoDiscount += Math.floor(promo8000Qty / 2) * 1000;
+  let promoDiscount = 0;
+  if (!wholesaleMode) {
+    if (!promoPeriodActive) promoDiscount += Math.floor(promo8000Qty / 2) * 1000;
+    promoDiscount += Math.floor(thiourayeQty / 2) * 1000;
   }
 
-  // ✅ Thiouraye reste active (tu peux l’enlever aussi si tu veux)
-  promoDiscount += Math.floor(thiourayeQty / 2) * 1000;
-}
-
-  // 🔹 Remise manuelle
   const discountInput = document.getElementById("cart-discount");
   let manualDiscount = 0;
 
@@ -611,38 +550,26 @@ if (!wholesaleMode) {
     }
   }
 
-  // 🔹 Remise anniversaire -30% (client sélectionné + anniversaire dans 72h)
   const select = document.getElementById("client-select");
   let birthdayDiscount = 0;
   let isBirthdayClient = false;
 
   if (!wholesaleMode && select && select.value) {
-    const clientId = select.value;
-    const client = clients.find(c => c.id == clientId);
+    const client = clients.find((c) => String(c.id) === String(select.value));
     if (client && isClientBirthdaySoon(client)) {
       isBirthdayClient = true;
-
-      // 👉 Les autres remises ne s'accumulent PAS
       promoDiscount = 0;
       manualDiscount = 0;
-
-      birthdayDiscount = Math.round(baseTotal * 0.30);
+      birthdayDiscount = Math.round(baseTotal * 0.3);
     }
   }
 
-  let finalTotal =
-    baseTotal - promoDiscount - manualDiscount - birthdayDiscount;
+  let finalTotal = baseTotal - promoDiscount - manualDiscount - birthdayDiscount;
   if (finalTotal < 0) finalTotal = 0;
 
-  return {
-    baseTotal,
-    promoDiscount,
-    manualDiscount,
-    birthdayDiscount,
-    isBirthdayClient,
-    finalTotal
-  };
+  return { baseTotal, promoDiscount, manualDiscount, birthdayDiscount, isBirthdayClient, finalTotal };
 }
+
 function renderCart() {
   const container = document.getElementById("cart-list");
   const totalSpan = document.getElementById("cart-total");
@@ -659,7 +586,6 @@ function renderCart() {
   cart.forEach((item, index) => {
     const labelGros = item.wholesale ? " (gros)" : "";
 
-    // si article en gros → prix modifiable dans le panier
     const priceField = item.wholesale
       ? `<input type="number" min="0" value="${item.price}"
             onchange="updateCartItemPrice(${index}, this.value)"
@@ -706,26 +632,6 @@ function clearCart() {
   renderCart();
 }
 
-function printTicket() {
-  let saleToPrint = null;
-
-  // 1) Priorité : la dernière vente enregistrée dans lastTicketSale
-  if (typeof lastTicketSale !== "undefined" && lastTicketSale) {
-    saleToPrint = lastTicketSale;
-  }
-
-  // 2) Si jamais lastTicketSale est vide, on prend la dernière vente du tableau sales
-  if ((!saleToPrint || !saleToPrint.items) && Array.isArray(sales) && sales.length > 0) {
-    saleToPrint = sales[sales.length - 1];
-  }
-
-  if (!saleToPrint) {
-    alert("Aucune vente à imprimer.");
-    return;
-  }
-
-  openReceiptWindow(saleToPrint);
-}
 // ================== CLIENTS EN CAISSE ==================
 function renderClientSelect() {
   const select = document.getElementById("client-select");
@@ -739,110 +645,48 @@ function renderClientSelect() {
   optNone.textContent = "Sans compte client";
   select.appendChild(optNone);
 
-  clients.forEach(c => {
+  clients.forEach((c) => {
     const opt = document.createElement("option");
     opt.value = String(c.id);
     opt.textContent = `${c.name}${c.phone ? " (" + c.phone + ")" : ""}`;
     select.appendChild(opt);
   });
 
-  if (current && clients.some(c => String(c.id) === current)) {
+  if (current && clients.some((c) => String(c.id) === String(current))) {
     select.value = current;
   }
 }
 
-// ✅ état global : on sait si on ajoute ou si on modifie
-let editingClientId = null;
-
-// ✅ Ouvrir la modale en mode "AJOUT"
 function openAddClientModal() {
-  editingClientId = null;
+  const name = prompt("Nom du client :");
+  if (!name || !name.trim()) return;
 
-  document.getElementById("client-form-title").textContent = "Ajouter un client";
-  document.getElementById("client-form-name").value = "";
-  document.getElementById("client-form-phone").value = "";
-  document.getElementById("client-form-birthdate").value = "";
+  const phone = prompt("Téléphone du client (optionnel) :") || "";
+  const birthdateInput =
+    prompt("Date de naissance (optionnel, format AAAA-MM-JJ, ex : 1995-08-21) :") ||
+    "";
 
-  document.getElementById("client-form-modal").classList.remove("hidden");
-}
-
-// ✅ Ouvrir la modale en mode "MODIF"
-function openEditClientModal(clientId) {
-  const c = clients.find(x => x.id == clientId);
-  if (!c) return;
-
-  editingClientId = c.id;
-
-  document.getElementById("client-form-title").textContent = "Modifier le client";
-  document.getElementById("client-form-name").value = c.name || "";
-  document.getElementById("client-form-phone").value = c.phone || "";
-  document.getElementById("client-form-birthdate").value = c.birthdate || "";
-
-  document.getElementById("client-form-modal").classList.remove("hidden");
-}
-
-// ✅ Fermer la modale
-function closeClientFormModal() {
-  document.getElementById("client-form-modal").classList.add("hidden");
-}
-
-// ✅ Enregistrer (ajout OU modification)
-function saveClientFromModal() {
-  const name = (document.getElementById("client-form-name").value || "").trim();
-  const phone = (document.getElementById("client-form-phone").value || "").trim();
-  const birthdate = document.getElementById("client-form-birthdate").value || "";
-
-  if (!name) {
-    alert("Merci de renseigner le nom du client.");
-    return;
+  let birthdate = "";
+  if (birthdateInput.trim()) {
+    const d = new Date(birthdateInput.trim());
+    if (!isNaN(d.getTime())) birthdate = d.toISOString().slice(0, 10);
   }
 
-  // AJOUT
-  if (!editingClientId) {
-    const newClient = {
-      id: Date.now(),
-      name,
-      phone,
-      createdAt: new Date().toISOString(),
-      birthdate
-    };
+  const newClient = {
+    id: Date.now(),
+    name: name.trim(),
+    phone: phone.trim(),
+    createdAt: new Date().toISOString(),
+    birthdate
+  };
 
-    clients.push(newClient);
-    saveClients(clients);
-    sendClientToSheet(newClient);
+  clients.push(newClient);
+  saveClients(clients);
+  sendClientToSheet(newClient);
 
-    alert("Client ajouté.");
-  } 
-  // MODIFICATION
-  else {
-    const c = clients.find(x => x.id == editingClientId);
-    if (!c) return;
-
-    c.name = name;
-    c.phone = phone;
-    c.birthdate = birthdate;
-
-    saveClients(clients);
-
-    // 🔥 ici : il faudra une route Sheets pour update (sinon local seulement)
-    // sendClientUpdateToSheet(c);
-
-    alert("Client modifié.");
-  }
-
-  closeClientFormModal();
   renderClientSelect();
   renderClientsTable();
-}
-
-function sendClientUpdateToSheet(client) {
-  const payload = encodeURIComponent(JSON.stringify({ client }));
-  const url = `${SHEET_URL}?action=updateClient&payload=${payload}`;
-
-  fetch(url)
-    .then(r => r.text())
-    .then(txt => console.log("updateClient ->", txt))
-    .catch(err => console.error("updateClient error:", err));
+  alert("Client ajouté.");
 }
 
 // ================== CONFIRMATION VENTE ==================
@@ -852,9 +696,8 @@ function confirmSale() {
     return;
   }
 
-  // 1) Vérifier le stock
   for (const item of cart) {
-    const product = products.find(p => p.id === item.productId);
+    const product = products.find((p) => p.id === item.productId);
     if (!product) {
       alert("Produit introuvable.");
       return;
@@ -865,62 +708,33 @@ function confirmSale() {
     }
   }
 
-  // 2) Soustraire du stock
-  cart.forEach(item => {
-    const product = products.find(p => p.id === item.productId);
-    if (product) {
-      product.stock = Math.max(0, product.stock - item.qty);
-    }
+  cart.forEach((item) => {
+    const product = products.find((p) => p.id === item.productId);
+    if (product) product.stock = Math.max(0, product.stock - item.qty);
   });
+
   saveProducts(products);
-  if (typeof sendStockToSheet === "function") {
-    sendStockToSheet(products);
-  }
+  sendStockToSheet(products);
 
-  // 3) Totaux (promo catalogue + Thiouraye + remise manuelle + anniversaire)
   const totals = calculateCartTotals();
-
-  // Mode de paiement
   const methodSelect = document.getElementById("payment-method");
   const paymentMethod = methodSelect ? methodSelect.value : "cash";
-
-  // Vente en gros ?
   const wholesaleMode = document.getElementById("wholesale-mode")?.checked;
 
-  // 4) Client & fidélité (sauf gros & sauf anniversaire)
   const select = document.getElementById("client-select");
   let clientId = null;
   let clientName = "";
   let clientPhone = "";
-  let loyaltyDiscount = 0;
-  let loyaltyReasonText = "";
 
-  if (select && select.value && !wholesaleMode && !totals.isBirthdayClient) {
-    clientId = Number(select.value);
-    const client = clients.find(c => c.id === clientId);
+  if (select && select.value && !wholesaleMode) {
+    clientId = select.value; // garder string
+    const client = clients.find((c) => String(c.id) === String(clientId));
     if (client) {
       clientName = client.name;
       clientPhone = client.phone || "";
-
-      let clientTotalBefore = 0;
-      sales.forEach(s => {
-        if (s.clientId == clientId) clientTotalBefore += s.total || 0;
-      });
-
-      const totalBeforeLoyalty = totals.finalTotal;
-      const beforeTranches = Math.floor(clientTotalBefore / 100000);
-      const afterTranches = Math.floor(
-        (clientTotalBefore + totalBeforeLoyalty) / 100000
-      );
-
-      if (afterTranches > beforeTranches) {
-        loyaltyDiscount = Math.floor(totalBeforeLoyalty * 0.10);
-        loyaltyReasonText = "remise fidélité 10%";
-      }
     }
   }
 
-  // 5) Remises totales & raison
   const discountReasonInput = document.getElementById("cart-discount-reason");
   const userReason = discountReasonInput ? discountReasonInput.value.trim() : "";
 
@@ -929,126 +743,78 @@ function confirmSale() {
   let birthdayDiscount = totals.birthdayDiscount || 0;
 
   if (wholesaleMode) {
-    // En gros → aucune remise auto ni anniversaire ni fidélité
     promoDiscount = 0;
     manualDiscount = 0;
     birthdayDiscount = 0;
-    loyaltyDiscount = 0;
   }
 
   let fullDiscountReason = userReason;
-
   if (birthdayDiscount > 0) {
     if (fullDiscountReason) fullDiscountReason += " + ";
     fullDiscountReason += "remise anniversaire -30%";
-  } else {
-    if (promoDiscount > 0) {
-      if (fullDiscountReason) fullDiscountReason += " + ";
-      fullDiscountReason += "promo catalogue";
-    }
-    if (loyaltyDiscount > 0) {
-      if (fullDiscountReason) fullDiscountReason += " + ";
-      fullDiscountReason += loyaltyReasonText;
-    }
-    if (wholesaleMode) {
-      if (fullDiscountReason) fullDiscountReason += " + ";
-      fullDiscountReason += "vente en gros";
-    }
+  } else if (promoDiscount > 0) {
+    if (fullDiscountReason) fullDiscountReason += " + ";
+    fullDiscountReason += "promo catalogue";
   }
 
   const baseTotal = totals.baseTotal;
-  const totalDiscount =
-    promoDiscount + manualDiscount + loyaltyDiscount + birthdayDiscount;
+  const totalDiscount = promoDiscount + manualDiscount + birthdayDiscount;
   const finalTotal = Math.max(0, baseTotal - totalDiscount);
 
-  // 6) Construire l'objet vente
   const sale = {
     id: Date.now(),
     date: new Date().toISOString(),
-    baseTotal: baseTotal,
+    baseTotal,
     total: finalTotal,
-    items: cart.map(item => {
-      const product = products.find(p => p.id === item.productId);
-      const unitPrice =
-        item.price != null
-          ? item.price
-          : product
-          ? product.price
-          : 0;
-      return {
-        productId: item.productId,
-        name: product ? product.name : item.name || "",
-        qty: item.qty,
-        price: unitPrice,
-        lineTotal: unitPrice * item.qty
-      };
-    }),
+    items: cart.map((item) => ({
+      productId: item.productId,
+      name: item.name || "",
+      qty: item.qty,
+      price: item.price || 0,
+      lineTotal: (item.price || 0) * item.qty
+    })),
     paymentMethod,
     promoDiscount,
     manualDiscount,
-    loyaltyDiscount,
     birthdayDiscount,
     discountAmount: totalDiscount,
     discountReason: fullDiscountReason,
     clientId,
     clientName,
     clientPhone,
-    wholesale: wholesaleMode ? true : false
+    wholesale: !!wholesaleMode
   };
 
-  // 7) Mise à jour infos client (pas en gros, pas besoin de distinguer anniversaire)
-  if (clientId && !wholesaleMode) {
-    const client = clients.find(c => c.id === clientId);
-    if (client) {
-      let totalSpent = 0;
-      sales.forEach(s => {
-        if (s.clientId == clientId) totalSpent += s.total || 0;
-      });
-      totalSpent += finalTotal;
-
-      client.totalSpent = totalSpent;
-      client.orderCount = (client.orderCount || 0) + 1;
-      saveClients(clients);
-      renderClientsTable();
-      renderClientSelect();
-    }
-  }
-
-  // 8) Sauvegarde + envoi à Sheets
   sales.push(sale);
   saveSales(sales);
-  if (typeof sendSaleToSheet === "function") {
-    sendSaleToSheet(sale);
-  }
+  sendSaleToSheet(sale);
 
-  // 9) Ticket
   lastTicketSale = sale;
 
-  // 10) Nettoyage
   clearCart();
   renderProductsForSale();
   updateSalesViewForSelectedDate();
+  loadDashboardStats?.();
 
   alert("Vente enregistrée !");
 }
+
 // ================== TICKET DE CAISSE ==================
 function openReceiptWindow(sale) {
   const boutiqueName = "BSK";
   const dateStr = new Date(sale.date).toLocaleString("fr-FR");
 
   let rowsHtml = "";
-  sale.items.forEach(item => {
-    const product = products.find(p => p.id === item.productId);
-    const name = item.name || (product ? product.name : "");
-    const unitPrice = item.price != null
-      ? item.price
-      : (product ? product.price : 0);
-    const lineTotal = unitPrice * item.qty;
+  (sale.items || []).forEach((item) => {
+    const name = item.name || "Produit";
+    const unitPrice = Number(item.price) || 0;
+    const qty = Number(item.qty) || 0;
+    const lineTotal = unitPrice * qty;
 
     rowsHtml += `
       <tr>
         <td>${name}</td>
-        <td style="text-align:center;">${item.qty}</td>
+        <td style="text-align:center;">${qty}</td>
         <td style="text-align:right;">${unitPrice} FCFA</td>
         <td style="text-align:right;">${lineTotal} FCFA</td>
       </tr>
@@ -1058,7 +824,7 @@ function openReceiptWindow(sale) {
   const baseTotal = sale.baseTotal || sale.total;
   const promoDiscount = sale.promoDiscount || 0;
   const manualDiscount = sale.manualDiscount || 0;
-  const loyaltyDiscount = sale.loyaltyDiscount || 0;
+  const birthdayDiscount = sale.birthdayDiscount || 0;
   const discountReason = sale.discountReason || "";
 
   let discountRowsHtml = `
@@ -1068,32 +834,18 @@ function openReceiptWindow(sale) {
     </tr>
   `;
 
-  if (promoDiscount > 0) {
+  const addDiscRow = (label, amount) => {
     discountRowsHtml += `
       <tr class="discount-row">
-        <td colspan="3" style="text-align:right;">Remise promo 2x8000 :</td>
-        <td style="text-align:right;">- ${promoDiscount} FCFA</td>
+        <td colspan="3" style="text-align:right;">${label} :</td>
+        <td style="text-align:right;">- ${amount} FCFA</td>
       </tr>
     `;
-  }
+  };
 
-  if (manualDiscount > 0) {
-    discountRowsHtml += `
-      <tr class="discount-row">
-        <td colspan="3" style="text-align:right;">Remise :</td>
-        <td style="text-align:right;">- ${manualDiscount} FCFA</td>
-      </tr>
-    `;
-  }
-
-  if (loyaltyDiscount > 0) {
-    discountRowsHtml += `
-      <tr class="discount-row">
-        <td colspan="3" style="text-align:right;">Remise fidélité 10% :</td>
-        <td style="text-align:right;">- ${loyaltyDiscount} FCFA</td>
-      </tr>
-    `;
-  }
+  if (promoDiscount > 0) addDiscRow("Remise promo", promoDiscount);
+  if (manualDiscount > 0) addDiscRow("Remise", manualDiscount);
+  if (birthdayDiscount > 0) addDiscRow("Remise anniversaire", birthdayDiscount);
 
   if (discountReason) {
     discountRowsHtml += `
@@ -1110,80 +862,21 @@ function openReceiptWindow(sale) {
       <meta charset="UTF-8">
       <title>Ticket de caisse - ${boutiqueName}</title>
       <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-          font-size: 13px;
-          margin: 10px;
-          color: #111827;
-        }
-        .ticket-container {
-          max-width: 320px;
-          margin: 0 auto;
-        }
-        .ticket-logo {
-          text-align: center;
-          margin-bottom: 4px;
-        }
-        .ticket-logo img {
-          width: 60px;
-          height: 60px;
-          object-fit: cover;
-          border-radius: 14px;
-          border: 1px solid #e5e7eb;
-        }
-        h1 {
-          font-size: 18px;
-          text-align: center;
-          margin: 4px 0 2px;
-        }
-        .subtitle {
-          text-align: center;
-          font-size: 11px;
-          color: #6b7280;
-          margin-bottom: 8px;
-        }
-        .line {
-          border-top: 1px dashed #9ca3af;
-          margin: 6px 0;
-        }
-        table {
-          border-collapse: collapse;
-          width: 100%;
-        }
-        th, td {
-          padding: 3px 0;
-        }
-        th {
-          border-bottom: 1px solid #e5e7eb;
-          font-size: 12px;
-          text-align: left;
-        }
-        .total-row td {
-          border-top: 1px solid #e5e7eb;
-          padding-top: 6px;
-          font-weight: 600;
-        }
-        .discount-row td {
-          font-size: 12px;
-          color: #6b7280;
-        }
-        .footer {
-          margin-top: 12px;
-          text-align: center;
-          font-size: 12px;
-          color: #374151;
-          line-height: 1.4;
-        }
-        .print-btn {
-          margin-top: 10px;
-          padding: 6px 10px;
-          font-size: 12px;
-        }
-        .qr {
-          margin-top: 6px;
-          width: 120px;
-          height: 120px;
-        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 13px; margin: 10px; color: #111827; }
+        .ticket-container { max-width: 320px; margin: 0 auto; }
+        .ticket-logo { text-align: center; margin-bottom: 4px; }
+        .ticket-logo img { width: 60px; height: 60px; object-fit: cover; border-radius: 14px; border: 1px solid #e5e7eb; }
+        h1 { font-size: 18px; text-align: center; margin: 4px 0 2px; }
+        .subtitle { text-align: center; font-size: 11px; color: #6b7280; margin-bottom: 8px; }
+        .line { border-top: 1px dashed #9ca3af; margin: 6px 0; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { padding: 3px 0; }
+        th { border-bottom: 1px solid #e5e7eb; font-size: 12px; text-align: left; }
+        .total-row td { border-top: 1px solid #e5e7eb; padding-top: 6px; font-weight: 600; }
+        .discount-row td { font-size: 12px; color: #6b7280; }
+        .footer { margin-top: 12px; text-align: center; font-size: 12px; color: #374151; line-height: 1.4; }
+        .print-btn { margin-top: 10px; padding: 6px 10px; font-size: 12px; }
+        .qr { margin-top: 6px; width: 120px; height: 120px; }
       </style>
     </head>
     <body>
@@ -1221,11 +914,9 @@ function openReceiptWindow(sale) {
           Téléphone : 77 876 92 01<br>
           Horaires : 12h à 23h (Lundi → Samedi)<br><br>
           <span>Scannez pour nous écrire sur WhatsApp :</span><br>
-          <img
-            class="qr"
+          <img class="qr"
             src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=https://wa.me/221778769201"
-            alt="QR WhatsApp BSK"
-          >
+            alt="QR WhatsApp BSK">
         </div>
 
         <button class="print-btn" onclick="window.print()">Imprimer</button>
@@ -1244,27 +935,16 @@ function openReceiptWindow(sale) {
   win.document.close();
 }
 
-// ================== BOUTON "IMPRIMER LE TICKET" ==================
 function printTicket() {
-  // On utilise d'abord lastTicketSale, sinon la dernière vente du tableau sales
-  let saleToPrint = null;
-
-  if (lastTicketSale) {
-    saleToPrint = lastTicketSale;
-  } else if (Array.isArray(sales) && sales.length > 0) {
-    saleToPrint = sales[sales.length - 1];
-  }
-
+  let saleToPrint = lastTicketSale || (Array.isArray(sales) && sales.length ? sales[sales.length - 1] : null);
   if (!saleToPrint) {
     alert("Aucune vente à imprimer.");
     return;
   }
-
   openReceiptWindow(saleToPrint);
 }
-// ================== PRODUITS & STOCK ==================
 
-// Rendu de la table des produits (onglet "Produits & Stock")
+// ================== PRODUITS & STOCK ==================
 function renderProductsTable() {
   const tbody = document.getElementById("products-table-body");
   if (!tbody) return;
@@ -1278,19 +958,14 @@ function renderProductsTable() {
     return;
   }
 
-  products.forEach(p => {
+  products.forEach((p) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${p.name}</td>
       <td>${p.price || 0} FCFA</td>
       <td>${p.stock || 0}</td>
       <td>
-        <input
-          type="number"
-          id="stock-input-${p.id}"
-          value="${p.stock || 0}"
-          min="0"
-        />
+        <input type="number" id="stock-input-${p.id}" value="${p.stock || 0}" min="0" />
       </td>
       <td>
         <button onclick="updateProductStock(${p.id})">Mettre à jour</button>
@@ -1300,9 +975,8 @@ function renderProductsTable() {
   });
 }
 
-// Modification manuelle du stock d'un produit
 function updateProductStock(productId) {
-  const product = products.find(p => p.id === productId);
+  const product = products.find((p) => p.id === productId);
   if (!product) {
     alert("Produit introuvable.");
     return;
@@ -1324,7 +998,6 @@ function updateProductStock(productId) {
     return;
   }
 
-  // 🔥 Motif obligatoire
   const reason = prompt("Motif de modification du stock :");
   if (!reason || !reason.trim()) {
     alert("Le motif est obligatoire.");
@@ -1332,15 +1005,11 @@ function updateProductStock(productId) {
     return;
   }
 
-  // Mise à jour locale
   product.stock = newStock;
   saveProducts(products);
   renderProductsTable();
-
-  // Envoi du stock complet vers Google Sheets (updateStock)
   sendStockToSheetWithFallback(products);
 
-  // Historique : construire l'entrée
   const change = {
     date: new Date().toISOString(),
     productId: product.id,
@@ -1351,53 +1020,35 @@ function updateProductStock(productId) {
     reason: reason.trim()
   };
 
-  // Envoi dans l'historique Sheets
   logStockChangeToSheet(change);
 
-  // Ajouter aussi localement & rafraîchir l'affichage
   if (!Array.isArray(stockHistory)) stockHistory = [];
   stockHistory.push(change);
   renderStockHistoryTable();
 }
 
-// Envoi du stock vers Sheets (action=updateStock)
 function sendStockToSheetWithFallback(productsList) {
-  // Si tu as déjà une fonction sendStockToSheet, on l'utilise
   if (typeof sendStockToSheet === "function") {
     sendStockToSheet(productsList);
     return;
   }
-
-  // Sinon on fait un fallback direct
   const payload = JSON.stringify({ products: productsList });
   const url = `${SHEET_URL}?action=updateStock&payload=${encodeURIComponent(payload)}`;
-
   fetch(url)
-    .then(r => r.text())
-    .then(txt => {
-      console.log("updateStock ->", txt);
-    })
-    .catch(err => {
-      console.error("updateStock error:", err);
-    });
+    .then((r) => r.text())
+    .then((txt) => console.log("updateStock ->", txt))
+    .catch((err) => console.error("updateStock error:", err));
 }
 
-// Envoi d'un mouvement de stock vers Sheets (logStockChange)
 function logStockChangeToSheet(change) {
   const payload = JSON.stringify({ change });
   const url = `${SHEET_URL}?action=logStockChange&payload=${encodeURIComponent(payload)}`;
-
   fetch(url)
-    .then(r => r.text())
-    .then(txt => {
-      console.log("logStockChange ->", txt);
-    })
-    .catch(err => {
-      console.error("logStockChange error:", err);
-    });
+    .then((r) => r.text())
+    .then((txt) => console.log("logStockChange ->", txt))
+    .catch((err) => console.error("logStockChange error:", err));
 }
 
-// Lecture de l'historique depuis Sheets
 function fetchStockHistoryFromSheet() {
   const callbackName = "onStockHistory_" + Date.now();
   const script = document.createElement("script");
@@ -1405,13 +1056,11 @@ function fetchStockHistoryFromSheet() {
   window[callbackName] = function (data) {
     try {
       if (data && Array.isArray(data.history)) {
-        stockHistory = data.history.map(h => {
+        stockHistory = data.history.map((h) => {
           const oldStock = Number(h.oldStock) || 0;
           const newStock = Number(h.newStock) || 0;
           const delta =
-            typeof h.delta !== "undefined"
-              ? Number(h.delta) || 0
-              : newStock - oldStock;
+            typeof h.delta !== "undefined" ? Number(h.delta) || 0 : newStock - oldStock;
 
           return {
             date: h.date,
@@ -1441,7 +1090,6 @@ function fetchStockHistoryFromSheet() {
   document.body.appendChild(script);
 }
 
-// Affichage de l'historique dans le tableau
 function renderStockHistoryTable() {
   const tbody = document.getElementById("stock-history-body");
   if (!tbody) return;
@@ -1461,31 +1109,20 @@ function renderStockHistoryTable() {
   let start = null;
   let end = null;
 
-  if (startInput && startInput.value) {
-    start = new Date(startInput.value + "T00:00:00");
-  }
-  if (endInput && endInput.value) {
-    end = new Date(endInput.value + "T23:59:59");
-  }
+  if (startInput && startInput.value) start = new Date(startInput.value + "T00:00:00");
+  if (endInput && endInput.value) end = new Date(endInput.value + "T23:59:59");
 
-  // Derniers mouvements en premier
-  const sorted = [...stockHistory].sort((a, b) => {
-    const da = new Date(a.date).getTime();
-    const db = new Date(b.date).getTime();
-    return db - da;
-  });
+  const sorted = [...stockHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  const filtered = sorted.filter(entry => {
-    const d = new Date(entry.date);
-    if (isNaN(d.getTime())) {
-      // si la date est invalide et qu'il y a un filtre, on l'ignore
-      if (start || end) return false;
+  const filtered = sorted
+    .filter((entry) => {
+      const d = new Date(entry.date);
+      if (isNaN(d.getTime())) return !(start || end);
+      if (start && d < start) return false;
+      if (end && d > end) return false;
       return true;
-    }
-    if (start && d < start) return false;
-    if (end && d > end) return false;
-    return true;
-  }).slice(0, 300); // limite à 300 lignes max
+    })
+    .slice(0, 300);
 
   if (filtered.length === 0) {
     const tr = document.createElement("tr");
@@ -1494,12 +1131,9 @@ function renderStockHistoryTable() {
     return;
   }
 
-  filtered.forEach(entry => {
+  filtered.forEach((entry) => {
     const d = new Date(entry.date);
-    const dateStr = isNaN(d.getTime())
-      ? entry.date
-      : d.toLocaleString("fr-FR");
-
+    const dateStr = isNaN(d.getTime()) ? entry.date : d.toLocaleString("fr-FR");
     const deltaSign = entry.delta > 0 ? "+" : "";
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -1513,16 +1147,15 @@ function renderStockHistoryTable() {
     tbody.appendChild(tr);
   });
 }
+
 function setStockHistoryRangeToday() {
   const startInput = document.getElementById("stock-history-start");
   const endInput = document.getElementById("stock-history-end");
   if (!startInput || !endInput) return;
 
-  const today = new Date();
-  const iso = today.toISOString().slice(0, 10);
+  const iso = new Date().toISOString().slice(0, 10);
   startInput.value = iso;
   endInput.value = iso;
-
   renderStockHistoryTable();
 }
 
@@ -1532,14 +1165,13 @@ function setStockHistoryRangeWeek() {
   if (!startInput || !endInput) return;
 
   const today = new Date();
-  const day = today.getDay(); // 0=dimanche, 1=lundi, ...
+  const day = today.getDay();
   const diffToMonday = (day + 6) % 7;
   const monday = new Date(today);
   monday.setDate(today.getDate() - diffToMonday);
 
   startInput.value = monday.toISOString().slice(0, 10);
   endInput.value = today.toISOString().slice(0, 10);
-
   renderStockHistoryTable();
 }
 
@@ -1553,7 +1185,6 @@ function setStockHistoryRangeMonth() {
 
   startInput.value = first.toISOString().slice(0, 10);
   endInput.value = today.toISOString().slice(0, 10);
-
   renderStockHistoryTable();
 }
 
@@ -1567,12 +1198,10 @@ function setStockHistoryRangeYear() {
 
   startInput.value = first.toISOString().slice(0, 10);
   endInput.value = today.toISOString().slice(0, 10);
-
   renderStockHistoryTable();
 }
-// ================== FRAIS ==================
 
-// Ajout d'une dépense
+// ================== FRAIS ==================
 function addExpense() {
   const labelInput = document.getElementById("expense-label");
   const amountInput = document.getElementById("expense-amount");
@@ -1581,20 +1210,12 @@ function addExpense() {
   const label = (labelInput.value || "").trim();
   const amount = Number(amountInput.value) || 0;
 
-  if (!label) {
-    alert("Merci de renseigner le motif de la dépense.");
-    return;
-  }
-  if (amount <= 0) {
-    alert("Merci de renseigner un montant valide.");
-    return;
-  }
-
-  const nowIso = new Date().toISOString();
+  if (!label) return alert("Merci de renseigner le motif de la dépense.");
+  if (amount <= 0) return alert("Merci de renseigner un montant valide.");
 
   const expense = {
     id: Date.now(),
-    date: nowIso,
+    date: new Date().toISOString(),
     label,
     amount
   };
@@ -1602,22 +1223,16 @@ function addExpense() {
   if (!Array.isArray(expenses)) expenses = [];
   expenses.push(expense);
 
-  // Sauvegarde locale (optionnel mais pratique)
   saveExpenses(expenses);
-
-  // Envoi à Google Sheets
   sendExpenseToSheet(expense);
 
-  // Nettoyage des champs
   labelInput.value = "";
   amountInput.value = "";
 
   renderExpensesTable();
-
   alert("Dépense enregistrée.");
 }
 
-// Sauvegarde locale dans localStorage
 function saveExpenses(list) {
   try {
     localStorage.setItem("bsk_expenses", JSON.stringify(list || []));
@@ -1625,34 +1240,22 @@ function saveExpenses(list) {
     console.warn("Impossible de sauvegarder les frais en local", e);
   }
 }
-
-// Lecture locale (optionnel si Sheets ne répond pas)
 function loadExpensesFromLocal() {
   try {
     const raw = localStorage.getItem("bsk_expenses");
-    if (!raw) return [];
-    return JSON.parse(raw);
+    return raw ? JSON.parse(raw) : [];
   } catch (e) {
     return [];
   }
 }
-
-// Envoi d'une dépense vers Google Sheets
 function sendExpenseToSheet(expense) {
   const payload = JSON.stringify({ expense });
   const url = `${SHEET_URL}?action=addExpense&payload=${encodeURIComponent(payload)}`;
-
   fetch(url)
-    .then(r => r.text())
-    .then(txt => {
-      console.log("addExpense ->", txt);
-    })
-    .catch(err => {
-      console.error("addExpense error:", err);
-    });
+    .then((r) => r.text())
+    .then((txt) => console.log("addExpense ->", txt))
+    .catch((err) => console.error("addExpense error:", err));
 }
-
-// Récupération des dépenses depuis Google Sheets
 function fetchExpensesFromSheet() {
   const callbackName = "onExpensesFromSheet_" + Date.now();
   const script = document.createElement("script");
@@ -1660,7 +1263,7 @@ function fetchExpensesFromSheet() {
   window[callbackName] = function (data) {
     try {
       if (data && Array.isArray(data.expenses)) {
-        expenses = data.expenses.map(e => ({
+        expenses = data.expenses.map((e) => ({
           id: e.id || Date.now(),
           date: e.date,
           label: e.label || "",
@@ -1668,7 +1271,6 @@ function fetchExpensesFromSheet() {
         }));
         saveExpenses(expenses);
       } else {
-        // si rien depuis Sheets, on peut retomber sur le localStorage
         expenses = loadExpensesFromLocal();
       }
       renderExpensesTable();
@@ -1688,7 +1290,6 @@ function fetchExpensesFromSheet() {
   document.body.appendChild(script);
 }
 
-// Affichage filtré de l'historique des frais
 function renderExpensesTable() {
   const tbody = document.getElementById("expense-history-body");
   if (!tbody) return;
@@ -1708,29 +1309,19 @@ function renderExpensesTable() {
   let start = null;
   let end = null;
 
-  if (startInput && startInput.value) {
-    start = new Date(startInput.value + "T00:00:00");
-  }
-  if (endInput && endInput.value) {
-    end = new Date(endInput.value + "T23:59:59");
-  }
+  if (startInput && startInput.value) start = new Date(startInput.value + "T00:00:00");
+  if (endInput && endInput.value) end = new Date(endInput.value + "T23:59:59");
 
-  const sorted = [...expenses].sort((a, b) => {
-    const da = new Date(a.date).getTime();
-    const db = new Date(b.date).getTime();
-    return db - da;
-  });
-
-  const filtered = sorted.filter(entry => {
-    const d = new Date(entry.date);
-    if (isNaN(d.getTime())) {
-      if (start || end) return false;
+  const sorted = [...expenses].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const filtered = sorted
+    .filter((entry) => {
+      const d = new Date(entry.date);
+      if (isNaN(d.getTime())) return !(start || end);
+      if (start && d < start) return false;
+      if (end && d > end) return false;
       return true;
-    }
-    if (start && d < start) return false;
-    if (end && d > end) return false;
-    return true;
-  }).slice(0, 300);
+    })
+    .slice(0, 300);
 
   if (filtered.length === 0) {
     const tr = document.createElement("tr");
@@ -1739,12 +1330,9 @@ function renderExpensesTable() {
     return;
   }
 
-  filtered.forEach(e => {
+  filtered.forEach((e) => {
     const d = new Date(e.date);
-    const dateStr = isNaN(d.getTime())
-      ? e.date
-      : d.toLocaleString("fr-FR");
-
+    const dateStr = isNaN(d.getTime()) ? e.date : d.toLocaleString("fr-FR");
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${dateStr}</td>
@@ -1755,37 +1343,31 @@ function renderExpensesTable() {
   });
 }
 
-// Raccourcis de filtre : aujourd'hui / semaine / mois / année
 function setExpenseHistoryRangeToday() {
   const startInput = document.getElementById("expense-history-start");
   const endInput = document.getElementById("expense-history-end");
   if (!startInput || !endInput) return;
 
-  const today = new Date();
-  const iso = today.toISOString().slice(0, 10);
+  const iso = new Date().toISOString().slice(0, 10);
   startInput.value = iso;
   endInput.value = iso;
-
   renderExpensesTable();
 }
-
 function setExpenseHistoryRangeWeek() {
   const startInput = document.getElementById("expense-history-start");
   const endInput = document.getElementById("expense-history-end");
   if (!startInput || !endInput) return;
 
   const today = new Date();
-  const day = today.getDay(); // 0=dimanche, 1=lundi, ...
+  const day = today.getDay();
   const diffToMonday = (day + 6) % 7;
   const monday = new Date(today);
   monday.setDate(today.getDate() - diffToMonday);
 
   startInput.value = monday.toISOString().slice(0, 10);
   endInput.value = today.toISOString().slice(0, 10);
-
   renderExpensesTable();
 }
-
 function setExpenseHistoryRangeMonth() {
   const startInput = document.getElementById("expense-history-start");
   const endInput = document.getElementById("expense-history-end");
@@ -1796,10 +1378,8 @@ function setExpenseHistoryRangeMonth() {
 
   startInput.value = first.toISOString().slice(0, 10);
   endInput.value = today.toISOString().slice(0, 10);
-
   renderExpensesTable();
 }
-
 function setExpenseHistoryRangeYear() {
   const startInput = document.getElementById("expense-history-start");
   const endInput = document.getElementById("expense-history-end");
@@ -1810,11 +1390,18 @@ function setExpenseHistoryRangeYear() {
 
   startInput.value = first.toISOString().slice(0, 10);
   endInput.value = today.toISOString().slice(0, 10);
-
   renderExpensesTable();
 }
 
 // ================== CLIENTS (ONGLET CLIENTS) ==================
+function computeClientTotal(clientId) {
+  let sum = 0;
+  (sales || []).forEach((s) => {
+    if (String(s.clientId) === String(clientId)) sum += Number(s.total) || 0;
+  });
+  return sum;
+}
+
 function renderClientsTable() {
   const tbody = document.getElementById("clients-table-body");
   if (!tbody) return;
@@ -1824,22 +1411,21 @@ function renderClientsTable() {
 
   tbody.innerHTML = "";
 
-  const list = clients.filter(c =>
-    c.name.toLowerCase().includes(term) ||
-    (c.phone || "").toLowerCase().includes(term)
+  const list = (clients || []).filter(
+    (c) =>
+      (c.name || "").toLowerCase().includes(term) ||
+      (c.phone || "").toLowerCase().includes(term)
   );
 
   if (list.length === 0) {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td colspan="5">Aucun client trouvé.</td>`;
     tbody.appendChild(tr);
-
-    // mettre à jour la section anniversaires
     renderBirthdaySection();
     return;
   }
 
-  list.forEach(c => {
+  list.forEach((c) => {
     const totalSpent = computeClientTotal(c.id);
     const soon = isClientBirthdaySoon(c);
 
@@ -1850,83 +1436,20 @@ function renderClientsTable() {
       <td>${formatBirthdateShort(c.birthdate)}</td>
       <td>${totalSpent} FCFA</td>
       <td>
-  <button class="secondary-btn" onclick="openClientPopup('${c.id}')">
-    Informations
-  </button>
-  <button class="primary-btn" onclick="openEditClientModal('${c.id}')">
-    Modifier
-  </button>
-</td>
+        <button class="secondary-btn" onclick="openClientPopup('${c.id}')">Détails</button>
+      </td>
     `;
     tbody.appendChild(tr);
   });
 
-  // mettre à jour la section "Anniversaires dans 72h"
   renderBirthdaySection();
-}
-
-// ================== ANNIVERSAIRES CLIENTS ==================
-
-function parseClientBirthdate(client) {
-  if (!client) return null;
-
-  // on accepte plusieurs noms de champ, mais on privilégie "birthdate"
-  const raw =
-    client.birthdate ||
-    client.birthDate ||
-    client.dateOfBirth ||
-    client.date_naissance;
-
-  if (!raw) return null;
-
-  const d = new Date(raw);
-  if (isNaN(d.getTime())) return null;
-  return d;
-}
-
-/**
- * true si l'anniversaire du client est dans les 72 prochaines heures
- * (entre maintenant et +72h)
- */
-function isClientBirthdaySoon(client) {
-  const dob = parseClientBirthdate(client);
-  if (!dob) return false;
-
-  const now = new Date();
-  const year = now.getFullYear();
-
-  // anniversaire cette année
-  let nextBirthday = new Date(year, dob.getMonth(), dob.getDate());
-
-  // s'il est déjà passé → on prend l'année prochaine
-  if (nextBirthday < now) {
-    nextBirthday.setFullYear(year + 1);
-  }
-
-  const diffMs = nextBirthday.getTime() - now.getTime();
-  const diffHours = diffMs / (1000 * 60 * 60);
-
-  return diffHours >= 0 && diffHours <= 72;
-}
-
-/**
- * Affichage d'une date de naissance en format court "JJ/MM"
- */
-function formatBirthdateShort(raw) {
-  if (!raw) return "";
-  const d = new Date(raw);
-  if (isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("fr-FR", {
-    day: "2-digit",
-    month: "2-digit"
-  });
 }
 
 function renderBirthdaySection() {
   const container = document.getElementById("birthday-list");
   if (!container) return;
 
-  const birthdayClients = clients.filter(c => isClientBirthdaySoon(c));
+  const birthdayClients = (clients || []).filter((c) => isClientBirthdaySoon(c));
 
   if (birthdayClients.length === 0) {
     container.innerHTML = `<p>Aucun anniversaire dans les 72 prochaines heures.</p>`;
@@ -1934,27 +1457,21 @@ function renderBirthdaySection() {
   }
 
   container.innerHTML = "";
-
-  birthdayClients.forEach(c => {
+  birthdayClients.forEach((c) => {
     const div = document.createElement("div");
     div.className = "birthday-card";
     div.innerHTML = `
       <strong>${c.name}</strong>${c.phone ? " (" + c.phone + ")" : ""}<br>
       Anniversaire : ${formatBirthdateShort(c.birthdate)}<br>
-      <button onclick="sendBirthdayMessage('${c.id}')">
-        Envoyer un message
-      </button>
+      <button onclick="sendBirthdayMessage('${c.id}')">Envoyer un message</button>
     `;
     container.appendChild(div);
   });
 }
 
 function sendBirthdayMessage(clientId) {
-  const c = clients.find(cl => cl.id == clientId);
-  if (!c) {
-    alert("Client introuvable.");
-    return;
-  }
+  const c = (clients || []).find((cl) => String(cl.id) === String(clientId));
+  if (!c) return alert("Client introuvable.");
 
   const baseMessage =
     `Bonjour ${c.name} 🎉\n\n` +
@@ -1963,103 +1480,90 @@ function sendBirthdayMessage(clientId) {
     `valable 72h à partir d'aujourd'hui.\n\n` +
     `À très vite chez BSK 💛`;
 
-  // Si numéro, on tente d'ouvrir WhatsApp
   if (c.phone) {
     const phoneClean = c.phone.replace(/[^0-9]/g, "");
     const url = `https://wa.me/${phoneClean}?text=${encodeURIComponent(baseMessage)}`;
     window.open(url, "_blank");
   } else {
-    // Sinon on affiche juste le texte pour copier
     alert("Message à envoyer :\n\n" + baseMessage);
   }
 }
 
-function computeClientTotal(clientId) {
-  let sum = 0;
-
-  sales.forEach(s => {
-    if (s.clientId == clientId) { // == pour accepter string ou nombre
-      sum += Number(s.total) || 0;
-    }
-  });
-
-  return sum;
-}
+// ✅ Popup client sécurisée (ne casse plus ton JS si le HTML manque un id)
 function openClientPopup(clientId) {
-  const c = clients.find(c => c.id == clientId);
+  const modal = document.getElementById("popup-client");
+  const nameEl = document.getElementById("popup-client-name");
+  const phoneEl = document.getElementById("popup-client-phone");
+  const historyDiv = document.getElementById("popup-client-history");
+
+  if (!modal || !nameEl || !phoneEl || !historyDiv) {
+    console.error("Popup client manquante dans le HTML (ids requis).");
+    alert("Erreur: la fenêtre client n'existe pas (vérifie le HTML: popup-client...).");
+    return;
+  }
+
+  const c = (clients || []).find((x) => String(x.id) === String(clientId));
   if (!c) return;
 
-  // Nom & téléphone
-  document.getElementById("popup-client-name").textContent = c.name;
-  document.getElementById("popup-client-phone").textContent = c.phone || "—";
-
-  const historyDiv = document.getElementById("popup-client-history");
+  nameEl.textContent = c.name || "";
+  phoneEl.textContent = c.phone || "—";
   historyDiv.innerHTML = "";
 
-  // Toutes les ventes de ce client, triées de la plus récente à la plus ancienne
-  const historySales = sales
-    .filter(s => s.clientId == clientId)
+  const historySales = (sales || [])
+    .filter((s) => String(s.clientId) === String(clientId))
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
   if (historySales.length === 0) {
     historyDiv.textContent = "Aucun achat pour ce client.";
   } else {
-    historySales.forEach(s => {
+    historySales.forEach((s) => {
       const div = document.createElement("div");
       div.style.marginBottom = "10px";
-
-      const dateStr = new Date(s.date).toLocaleString();
+      const dateStr = new Date(s.date).toLocaleString("fr-FR");
 
       div.innerHTML = `
         <div><strong>${dateStr}</strong></div>
-        <div>Montant : ${s.total} FCFA</div>
+        <div>Montant : ${Number(s.total) || 0} FCFA</div>
         <div>Paiement : ${s.paymentMethod || "-"}</div>
         ${
-          s.discountAmount > 0
-            ? `<div>Remise : -${s.discountAmount} FCFA (${s.discountReason || "—"})</div>`
+          (Number(s.discountAmount) || 0) > 0
+            ? `<div>Remise : -${Number(s.discountAmount)} FCFA (${s.discountReason || "—"})</div>`
             : ""
         }
         <div>Produits :</div>
-        <ul>
-          ${
-            (s.items || [])
-              .map(i => `<li>${i.name} × ${i.qty}</li>`)
-              .join("")
-          }
-        </ul>
+        <ul>${(s.items || []).map((i) => `<li>${i.name} × ${i.qty}</li>`).join("")}</ul>
         <hr>
       `;
       historyDiv.appendChild(div);
     });
   }
 
-  document.getElementById("popup-client").classList.remove("hidden");
+  modal.classList.remove("hidden");
 }
 
 function closeClientPopup() {
-  document.getElementById("popup-client").classList.add("hidden");
+  const modal = document.getElementById("popup-client");
+  if (modal) modal.classList.add("hidden");
 }
+
 // ================== VENTES : AFFICHAGE JOURNALIER ==================
+function initSalesDate() {
+  const input = document.getElementById("sales-date");
+  if (!input) return;
+  if (!input.value) input.value = new Date().toISOString().slice(0, 10);
+}
+
 function updateSalesViewForSelectedDate() {
   const tbody = document.getElementById("sales-table-body");
   const dateInput = document.getElementById("sales-date");
   if (!tbody || !dateInput) return;
 
-  // Si aucune date choisie, on met aujourd'hui
-  if (!dateInput.value) {
-    const todayIso = new Date().toISOString().slice(0, 10);
-    dateInput.value = todayIso;
-  }
-  const dayStr = dateInput.value; // "YYYY-MM-DD"
+  if (!dateInput.value) dateInput.value = new Date().toISOString().slice(0, 10);
+  const dayStr = dateInput.value;
 
   tbody.innerHTML = "";
 
-  // Filtrer les ventes du jour
-  const daySales = sales.filter(s => {
-    if (!s.date) return false;
-    const dStr = String(s.date).slice(0, 10);
-    return dStr === dayStr;
-  });
+  const daySales = (sales || []).filter((s) => String(s.date || "").slice(0, 10) === dayStr);
 
   if (daySales.length === 0) {
     const tr = document.createElement("tr");
@@ -2068,20 +1572,18 @@ function updateSalesViewForSelectedDate() {
     return;
   }
 
-  daySales.forEach(sale => {
+  daySales.forEach((sale) => {
     const tr = document.createElement("tr");
 
-    // Heure
     const d = new Date(sale.date);
     const timeStr = isNaN(d.getTime())
       ? ""
       : d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
-    // Produits (nom + qté + prix unitaire)
     let productsHtml = "";
     if (Array.isArray(sale.items) && sale.items.length > 0) {
       productsHtml = sale.items
-        .map(item => {
+        .map((item) => {
           const name = item.name || "Produit";
           const qty = item.qty || 0;
           const unitPrice = item.price != null ? item.price : 0;
@@ -2090,22 +1592,17 @@ function updateSalesViewForSelectedDate() {
         .join("<br>");
     }
 
-    // Montant
     const amount = sale.total || 0;
 
-    // Mode de paiement
     let pm = sale.paymentMethod || "cash";
     if (pm === "cash") pm = "Espèces";
     else if (pm === "orange") pm = "Orange Money";
     else if (pm === "wave") pm = "Wave";
 
-    // Client
     let clientLabel = "—";
     if (sale.clientName) {
       clientLabel = sale.clientName;
-      if (sale.clientPhone) {
-        clientLabel += " (" + sale.clientPhone + ")";
-      }
+      if (sale.clientPhone) clientLabel += " (" + sale.clientPhone + ")";
     } else if (sale.clientPhone) {
       clientLabel = sale.clientPhone;
     }
@@ -2117,399 +1614,46 @@ function updateSalesViewForSelectedDate() {
       <td>${pm}</td>
       <td>
         ${clientLabel}<br>
-        <button class="danger-btn" onclick="deleteSale(${sale.id})">
-          Supprimer
-        </button>
+        <!-- ✅ IMPORTANT: id en string -->
+        <button class="danger-btn" onclick="deleteSale('${sale.id}')">Supprimer</button>
       </td>
     `;
-
     tbody.appendChild(tr);
   });
 }
 
-// ================== VENTES : SUPPRESSION ==================
+// ================== VENTES : SUPPRESSION (CORRIGÉE) ==================
 function deleteSale(saleId) {
-  if (!confirm("Supprimer définitivement cette vente ?")) {
-    return;
+  if (!confirm("Supprimer définitivement cette vente ?")) return;
+
+  const before = (sales || []).length;
+  sales = (sales || []).filter((s) => String(s.id) !== String(saleId));
+
+  if (sales.length === before) {
+    alert("Vente introuvable (local).");
   }
 
-  // Trouver la vente dans le tableau local
-  const index = sales.findIndex(s => s.id === saleId);
-  if (index === -1) {
-    alert("Vente introuvable.");
-    return;
-  }
-
-  // On enlève la vente du tableau
-  sales.splice(index, 1);
-  saveSales(sales); // met à jour le localStorage
-
-  // Mettre à jour la vue Ventes & Clients & Dashboard
+  saveSales(sales);
   updateSalesViewForSelectedDate();
   renderClientsTable();
-  if (typeof loadDashboardStats === "function") {
-    loadDashboardStats();
-  }
+  loadDashboardStats?.();
 
-  // Appeler Google Sheets pour supprimer aussi côté Sheets
+  // ✅ suppression côté Sheets (si ton Apps Script supporte action=deleteSale)
   const url = `${SHEET_URL}?action=deleteSale&id=${encodeURIComponent(saleId)}`;
   fetch(url)
-    .then(r => r.text())
-    .then(txt => {
+    .then((r) => r.text())
+    .then((txt) => {
       console.log("Suppression vente Sheets :", txt);
+      // ✅ recharge pour être sûr
+      fetchSalesFromSheet();
     })
-    .catch(err => {
+    .catch((err) => {
       console.error("Erreur suppression vente Sheets :", err);
+      alert("Supprimée localement, mais erreur côté Sheets.");
     });
 }
 
-// ====== HELPERS POUR LES RAPPORTS JOURNALIERS ======
-
-// Retourne la date sélectionnée dans l’onglet Ventes, ou aujourd’hui par défaut
-function getSelectedSalesDate() {
-  const input = document.getElementById("sales-date");
-  if (input && input.value) return input.value;
-
-  const today = new Date().toISOString().slice(0, 10);
-  if (input) input.value = today;
-  return today;
-}
-
-// Toutes les ventes pour une date "YYYY-MM-DD"
-function getSalesForDate(dateStr) {
-  return (sales || []).filter(s => {
-    if (!s.date) return false;
-    const dStr = typeof s.date === "string"
-      ? s.date.slice(0, 10)
-      : new Date(s.date).toISOString().slice(0, 10);
-    return dStr === dateStr;
-  });
-}
-
-// Toutes les dépenses pour une date "YYYY-MM-DD"
-function getExpensesForDate(dateStr) {
-  return (expenses || []).filter(e => {
-    if (!e.date) return false;
-    const dStr = typeof e.date === "string"
-      ? e.date.slice(0, 10)
-      : new Date(e.date).toISOString().slice(0, 10);
-    return dStr === dateStr;
-  });
-}
-
-// Nombre de clients uniques sur la journée
-function getUniqueClientsCountForDate(dateStr) {
-  const daySales = getSalesForDate(dateStr);
-  const seen = new Set();
-
-  daySales.forEach(s => {
-    if (s.clientId) {
-      seen.add("id:" + String(s.clientId));
-    } else if (s.clientPhone || s.clientName) {
-      seen.add("np:" + (s.clientPhone || "") + "|" + (s.clientName || ""));
-    }
-  });
-
-  return seen.size;
-}
-
-// ================== RAPPORT JOURNALIER (PDF) ==================
-function openDailyReportForSelectedDate() {
-  const dateStr = getSelectedSalesDate();
-  openDailyReportForDate(dateStr);
-}
-
-function openDailyReportForDate(dateStr) {
-  const daySales = getSalesForDate(dateStr);
-  const dayExpenses = getExpensesForDate(dateStr);
-  const uniqueClients = getUniqueClientsCountForDate(dateStr);
-
-  if (daySales.length === 0) {
-    alert("Aucune vente pour ce jour.");
-    return;
-  }
-
-  const dateLabel = new Date(dateStr + "T00:00:00").toLocaleDateString("fr-FR");
-
-  // ===== Résumé ventes + remises =====
-  let totalSalesAmount = 0;
-  let totalDiscountAmount = 0;
-
-  // Pour le tableau produits
-  const productMap = {}; // name -> { qty, amount, unitPrice, times[] }
-
-  daySales.forEach(sale => {
-    const saleAmount = Number(sale.total) || 0;
-    totalSalesAmount += saleAmount;
-
-    // Remise totale : on prend soit le détail, soit discountAmount
-    const saleDiscountTotal =
-      (sale.promoDiscount || 0) +
-      (sale.manualDiscount || 0) +
-      (sale.loyaltyDiscount || 0) ||
-      (sale.discountAmount || 0);
-
-    totalDiscountAmount += saleDiscountTotal;
-
-    // Calcul pour la répartition par produit
-    let baseSum = 0;
-    (sale.items || []).forEach(item => {
-      const product = products.find(p => p.id === item.productId);
-      const unit = product ? product.price : (item.price || 0);
-      baseSum += unit * (item.qty || 0);
-    });
-
-    const saleTime = new Date(sale.date).toLocaleTimeString("fr-FR", {
-      hour: "2-digit",
-      minute: "2-digit"
-    });
-
-    (sale.items || []).forEach(item => {
-      const product = products.find(p => p.id === item.productId);
-      const name = item.name || (product ? product.name : "");
-      const unitPriceBase = product ? product.price : (item.price || 0);
-      const lineBase = unitPriceBase * (item.qty || 0);
-
-      // On répartit la remise sur chaque ligne proportionnellement
-      let lineFinal = lineBase;
-      if (baseSum > 0 && saleDiscountTotal > 0) {
-        const ratio = lineBase / baseSum;
-        const lineDiscount = Math.round(saleDiscountTotal * ratio);
-        lineFinal = lineBase - lineDiscount;
-      }
-
-      if (!productMap[name]) {
-        productMap[name] = {
-          qty: 0,
-          amount: 0,
-          unitPrice: unitPriceBase,
-          times: []
-        };
-      }
-      productMap[name].qty += item.qty || 0;
-      productMap[name].amount += lineFinal;
-      productMap[name].times.push(saleTime);
-    });
-  });
-
-  const salesCount = daySales.length;
-  const averageBasket = salesCount > 0
-    ? Math.round(totalSalesAmount / salesCount)
-    : 0;
-
-  // ===== Frais du jour =====
-  let totalExpensesAmount = 0;
-  let expensesRowsHtml = "";
-
-  if (dayExpenses.length === 0) {
-    expensesRowsHtml = `
-      <tr>
-        <td colspan="3">Aucun frais enregistré pour ce jour.</td>
-      </tr>
-    `;
-  } else {
-    dayExpenses.forEach(exp => {
-      const d = new Date(exp.date);
-      const dateTimeStr = isNaN(d.getTime())
-        ? exp.date
-        : d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-
-      const amount = Number(exp.amount) || 0;
-      totalExpensesAmount += amount;
-
-      expensesRowsHtml += `
-        <tr>
-          <td>${dateTimeStr}</td>
-          <td>${exp.label || ""}</td>
-          <td style="text-align:right;">${amount} FCFA</td>
-        </tr>
-      `;
-    });
-  }
-
-  // ===== Tableau produits vendus =====
-  let productRows = "";
-  Object.keys(productMap).forEach(name => {
-    const info = productMap[name];
-    const timesStr = info.times.join(", ");
-    const unitDisplay = info.qty > 0
-      ? Math.round(info.amount / info.qty)
-      : info.unitPrice;
-
-    productRows += `
-      <tr>
-        <td>${name}</td>
-        <td style="text-align:center;">${info.qty}</td>
-        <td style="text-align:right;">${unitDisplay} FCFA</td>
-        <td style="text-align:right;">${info.amount} FCFA</td>
-        <td>${timesStr}</td>
-      </tr>
-    `;
-  });
-
-  // ===== Synthèse finale =====
-  const netResult = totalSalesAmount - totalExpensesAmount;
-
-  const html = `
-    <!DOCTYPE html>
-    <html lang="fr">
-    <head>
-      <meta charset="UTF-8">
-      <title>Rapport du ${dateLabel} - BSK</title>
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-          font-size: 13px;
-          margin: 20px;
-          color: #111827;
-        }
-        .report-container {
-          max-width: 900px;
-          margin: 0 auto;
-        }
-        .report-header {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          margin-bottom: 10px;
-        }
-        .report-header img {
-          width: 60px;
-          height: 60px;
-          object-fit: cover;
-          border-radius: 14px;
-          border: 1px solid #e5e7eb;
-        }
-        h1 {
-          margin: 0;
-          font-size: 22px;
-        }
-        .subtitle {
-          font-size: 12px;
-          color: #6b7280;
-        }
-        h2 {
-          font-size: 16px;
-          margin-top: 16px;
-          margin-bottom: 6px;
-          border-bottom: 1px solid #e5e7eb;
-          padding-bottom: 4px;
-        }
-        table {
-          border-collapse: collapse;
-          width: 100%;
-          margin-top: 6px;
-        }
-        th, td {
-          border: 1px solid #e5e7eb;
-          padding: 6px 8px;
-          text-align: left;
-        }
-        th {
-          background: #f3f4f6;
-          font-size: 12px;
-        }
-        .summary {
-          margin-top: 8px;
-          font-size: 13px;
-        }
-        .summary strong {
-          font-weight: 600;
-        }
-        .print-btn {
-          margin-top: 16px;
-          padding: 8px 14px;
-          font-size: 13px;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="report-container">
-        <div class="report-header">
-          <img src="logo.png" alt="Logo BSK" onerror="this.style.display='none'">
-          <div>
-            <h1>Rapport journalier</h1>
-            <div class="subtitle">
-              Date : ${dateLabel}<br>
-              Grand Dakar – Garage Casamance · Tél : 77 876 92 01
-            </div>
-          </div>
-        </div>
-
-        <h2>1. Résumé des ventes du jour</h2>
-        <div class="summary">
-          Nombre de ventes : <strong>${salesCount}</strong><br>
-          Nombre de clients : <strong>${uniqueClients}</strong><br>
-          Chiffre d'affaires (après remises) : <strong>${totalSalesAmount} FCFA</strong><br>
-          Total des remises : <strong>${totalDiscountAmount} FCFA</strong><br>
-          Panier moyen : <strong>${averageBasket} FCFA</strong>
-        </div>
-
-        <h2>2. Produits vendus (prix après remise)</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Produit</th>
-              <th>Quantité vendue</th>
-              <th>Prix moyen</th>
-              <th>Montant total</th>
-              <th>Heure(s) de vente</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${productRows}
-          </tbody>
-        </table>
-
-        <h2>3. Frais / dépenses du jour</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Heure</th>
-              <th>Motif</th>
-              <th>Montant</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${expensesRowsHtml}
-            <tr>
-              <td colspan="2" style="text-align:right;"><strong>Total des frais</strong></td>
-              <td style="text-align:right;"><strong>${totalExpensesAmount} FCFA</strong></td>
-            </tr>
-          </tbody>
-        </table>
-
-        <h2>4. Synthèse CA du jour</h2>
-        <div class="summary">
-          Chiffre d'affaires (ventes) : <strong>${totalSalesAmount} FCFA</strong><br>
-          Moins frais du jour : <strong>${totalExpensesAmount} FCFA</strong><br>
-          <span>Résultat net approximatif : </span>
-          <strong>${netResult} FCFA</strong>
-        </div>
-
-        <button class="print-btn" onclick="window.print()">
-          Imprimer / Enregistrer en PDF
-        </button>
-      </div>
-    </body>
-    </html>
-  `;
-
-  const win = window.open("", "_blank", "width=1000,height=900");
-  if (!win) {
-    alert("Autorisez les pop-up pour afficher le rapport.");
-    return;
-  }
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-}
 // ================== DASHBOARD ==================
-
-/**
- * Initialise les dates du tableau de bord à aujourd'hui
- * si rien n'est encore rempli.
- */
 function initDashboardDates() {
   const startInput = document.getElementById("dashboard-start");
   const endInput = document.getElementById("dashboard-end");
@@ -2522,79 +1666,73 @@ function initDashboardDates() {
   }
 }
 
-/** Raccourci : aujourd'hui */
 function setDashboardRangeToday() {
-  const today = new Date().toISOString().slice(0, 10);
   const startInput = document.getElementById("dashboard-start");
   const endInput = document.getElementById("dashboard-end");
   if (!startInput || !endInput) return;
 
+  const today = new Date().toISOString().slice(0, 10);
   startInput.value = today;
   endInput.value = today;
   loadDashboardStats();
 }
 
-/** Raccourci : cette semaine (lundi -> dimanche) */
 function setDashboardRangeWeek() {
+  const startInput = document.getElementById("dashboard-start");
+  const endInput = document.getElementById("dashboard-end");
+  if (!startInput || !endInput) return;
+
   const now = new Date();
-  const dayOfWeek = now.getDay() || 7; // Dimanche = 0 -> 7
+  const dayOfWeek = now.getDay() || 7;
   const monday = new Date(now);
   monday.setDate(now.getDate() - dayOfWeek + 1);
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
-
-  const startInput = document.getElementById("dashboard-start");
-  const endInput = document.getElementById("dashboard-end");
-  if (!startInput || !endInput) return;
 
   startInput.value = monday.toISOString().slice(0, 10);
   endInput.value = sunday.toISOString().slice(0, 10);
   loadDashboardStats();
 }
 
-/** Raccourci : ce mois-ci */
 function setDashboardRangeMonth() {
+  const startInput = document.getElementById("dashboard-start");
+  const endInput = document.getElementById("dashboard-end");
+  if (!startInput || !endInput) return;
+
   const now = new Date();
   const first = new Date(now.getFullYear(), now.getMonth(), 1);
   const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
-  const startInput = document.getElementById("dashboard-start");
-  const endInput = document.getElementById("dashboard-end");
-  if (!startInput || !endInput) return;
-
   startInput.value = first.toISOString().slice(0, 10);
   endInput.value = last.toISOString().slice(0, 10);
   loadDashboardStats();
 }
 
-/** Raccourci : cette année */
 function setDashboardRangeYear() {
+  const startInput = document.getElementById("dashboard-start");
+  const endInput = document.getElementById("dashboard-end");
+  if (!startInput || !endInput) return;
+
   const now = new Date();
   const first = new Date(now.getFullYear(), 0, 1);
   const last = new Date(now.getFullYear(), 11, 31);
 
-  const startInput = document.getElementById("dashboard-start");
-  const endInput = document.getElementById("dashboard-end");
-  if (!startInput || !endInput) return;
-
   startInput.value = first.toISOString().slice(0, 10);
   endInput.value = last.toISOString().slice(0, 10);
   loadDashboardStats();
 }
 
-/**
- * Calcule les stats du tableau de bord à partir de `sales`
- * (CA, nb ventes, remises, répartition paiements, CA/jour, ventes/jour)
- * puis met à jour les cartes + le graphique.
- */
 function loadDashboardStats() {
-  const startStr = document.getElementById("dashboard-start").value;
-  const endStr = document.getElementById("dashboard-end").value;
-
-  if (!startStr || !endStr) {
-    alert("Merci de choisir une date de début et une date de fin.");
+  const startEl = document.getElementById("dashboard-start");
+  const endEl = document.getElementById("dashboard-end");
+  if (!startEl || !endEl) {
+    console.error("Dashboard inputs manquants (dashboard-start / dashboard-end).");
     return;
   }
+
+  const startStr = startEl.value;
+  const endStr = endEl.value;
+  if (!startStr || !endStr) return;
 
   const start = new Date(startStr + "T00:00:00");
   const end = new Date(endStr + "T23:59:59");
@@ -2606,12 +1744,11 @@ function loadDashboardStats() {
   let orange = 0;
   let wave = 0;
 
-  // Objet pour le graphique : total & nombre de ventes par jour
-  const perDay = {}; // { "YYYY-MM-DD": { total: number, count: number } }
+  const perDay = {};
 
-  sales.forEach(s => {
+  (sales || []).forEach((s) => {
     const d = new Date(s.date);
-    if (isNaN(d)) return;
+    if (isNaN(d.getTime())) return;
     if (d < start || d > end) return;
 
     const amount = Number(s.total) || 0;
@@ -2619,110 +1756,17 @@ function loadDashboardStats() {
     count += 1;
     discount += Number(s.discountAmount) || 0;
 
-    if (s.paymentMethod === "orange") {
-      orange += amount;
-    } else if (s.paymentMethod === "wave") {
-      wave += amount;
-    } else {
-      cash += amount;
-    }
+    if (s.paymentMethod === "orange") orange += amount;
+    else if (s.paymentMethod === "wave") wave += amount;
+    else cash += amount;
 
-    const dayKey = s.date.slice(0, 10); // "YYYY-MM-DD"
-    if (!perDay[dayKey]) {
-      perDay[dayKey] = { total: 0, count: 0 };
-    }
+    const dayKey = String(s.date).slice(0, 10);
+    if (!perDay[dayKey]) perDay[dayKey] = { total: 0, count: 0 };
     perDay[dayKey].total += amount;
     perDay[dayKey].count += 1;
   });
 
   const avg = count > 0 ? Math.round(total / count) : 0;
-
-  // Mise à jour des cartes
-  document.getElementById("db-total").textContent = total;
-  document.getElementById("db-count").textContent = count;
-  document.getElementById("db-average").textContent = avg;
-  document.getElementById("db-discount").textContent = discount;
-  document.getElementById("db-cash").textContent = cash;
-  document.getElementById("db-orange").textContent = orange;
-  document.getElementById("db-wave").textContent = wave;
-
-  // Mise à jour du graphique
-  renderDashboardChart(perDay);
-}
-
-/**
- * Affiche le graphique avec 2 courbes :
- * - CA par jour
- * - Nombre de ventes par jour
- */
-function renderDashboardChart(perDay) {
-  const ctx = document.getElementById("dashboard-chart");
-  if (!ctx) return;
-
-  const labels = Object.keys(perDay).sort(); // dates triées
-  const caData = labels.map(d => perDay[d].total);
-  const countData = labels.map(d => perDay[d].count);
-
-  if (dashboardChart) {
-    dashboardChart.destroy();
-  }
-
-  dashboardChart = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels,
-      datasets: [
-        {
-          label: "CA (FCFA)",
-          data: caData,
-          yAxisID: "y1",
-          tension: 0.2
-        },
-        {
-          label: "Nombre de ventes",
-          data: countData,
-          yAxisID: "y2",
-          tension: 0.2
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      interaction: {
-        mode: "index",
-        intersect: false
-      },
-      scales: {
-        y1: {
-          type: "linear",
-          position: "left"
-        },
-        y2: {
-          type: "linear",
-          position: "right",
-          grid: {
-            drawOnChartArea: false
-          }
-        }
-      }
-    }
-  });
-}
-
-/**
- * (Optionnel) Si tu utilises encore la route "dashboard" de Code.gs
- * qui renvoie un objet agrégé { totalAmount, salesCount, ... },
- * tu peux garder cette fonction.
- * Sinon tu peux la supprimer.
- */
-function updateDashboardUI(data) {
-  if (!data) data = {};
-
-  const total = data.totalAmount || 0;
-  const count = data.salesCount || 0;
-  const avg = count > 0 ? Math.round(total / count) : 0;
-  const discount = data.totalDiscount || 0;
-  const byPayment = data.byPayment || {};
 
   const setText = (id, value) => {
     const el = document.getElementById(id);
@@ -2733,10 +1777,50 @@ function updateDashboardUI(data) {
   setText("db-count", count);
   setText("db-average", avg);
   setText("db-discount", discount);
-  setText("db-cash", byPayment.cash || 0);
-  setText("db-orange", byPayment.orange || 0);
-  setText("db-wave", byPayment.wave || 0);
+  setText("db-cash", cash);
+  setText("db-orange", orange);
+  setText("db-wave", wave);
+
+  renderDashboardChart(perDay);
 }
+
+function renderDashboardChart(perDay) {
+  const canvas = document.getElementById("dashboard-chart");
+  if (!canvas) {
+    console.error("Canvas dashboard-chart introuvable.");
+    return;
+  }
+  if (typeof Chart === "undefined") {
+    console.error("Chart.js n'est pas chargé (Chart undefined).");
+    return;
+  }
+
+  const labels = Object.keys(perDay).sort();
+  const caData = labels.map((d) => perDay[d].total);
+  const countData = labels.map((d) => perDay[d].count);
+
+  if (dashboardChart) dashboardChart.destroy();
+
+  dashboardChart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        { label: "CA (FCFA)", data: caData, yAxisID: "y1", tension: 0.2 },
+        { label: "Nombre de ventes", data: countData, yAxisID: "y2", tension: 0.2 }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        y1: { type: "linear", position: "left" },
+        y2: { type: "linear", position: "right", grid: { drawOnChartArea: false } }
+      }
+    }
+  });
+}
+
 // ================== BAR À PARFUM (AFFICHAGE) ==================
 function renderPerfumeBar() {
   const tbody = document.getElementById("perfume-table-body");
@@ -2773,25 +1857,23 @@ function changePerfumeLevel(index, newLevel) {
   renderPerfumeBar();
   sendPerfumesToSheet();
 }
+
 // ================== INIT ==================
 document.addEventListener("DOMContentLoaded", () => {
   showView("caisse");
 
-  // Charger les données au démarrage
-  fetchStockFromSheet();      // produits + stock
-  fetchClientsFromSheet();    // clients
-  fetchPerfumesFromSheet();   // bar à parfum
-  fetchSalesFromSheet();      // toutes les ventes déjà présentes
-  fetchStockHistoryFromSheet();  // 
+  fetchStockFromSheet();
+  fetchClientsFromSheet();
+  fetchPerfumesFromSheet();
+  fetchSalesFromSheet();
+  fetchStockHistoryFromSheet();
   fetchExpensesFromSheet();
 
   const discountInput = document.getElementById("cart-discount");
-  if (discountInput) {
-    discountInput.addEventListener("input", renderCart);
-  }
+  if (discountInput) discountInput.addEventListener("input", renderCart);
 
-  // 🔄 Rafraîchissement automatique des ventes toutes les 30 secondes
+  // Rafraîchissement auto ventes (30s)
   setInterval(() => {
     fetchSalesFromSheet();
-  }, 30000); // 30 000 ms = 30 secondes
+  }, 30000);
 });
