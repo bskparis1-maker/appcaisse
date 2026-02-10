@@ -1858,6 +1858,264 @@ function changePerfumeLevel(index, newLevel) {
   sendPerfumesToSheet();
 }
 
+// ================== RAPPORT JOURNALIER (PDF) - CORRIGÉ ==================
+
+// Retourne la date sélectionnée dans l’onglet Ventes, ou aujourd’hui par défaut
+function getSelectedSalesDate() {
+  const input = document.getElementById("sales-date");
+  const today = new Date().toISOString().slice(0, 10);
+  if (!input) return today;
+  if (!input.value) input.value = today;
+  return input.value;
+}
+
+function getSalesForDate(dateStr) {
+  return (sales || []).filter(s => String(s.date || "").slice(0, 10) === dateStr);
+}
+
+function getExpensesForDate(dateStr) {
+  return (expenses || []).filter(e => String(e.date || "").slice(0, 10) === dateStr);
+}
+
+function getUniqueClientsCountForDate(dateStr) {
+  const daySales = getSalesForDate(dateStr);
+  const seen = new Set();
+
+  daySales.forEach(s => {
+    if (s.clientId) seen.add("id:" + String(s.clientId));
+    else if (s.clientPhone || s.clientName) seen.add("np:" + (s.clientPhone || "") + "|" + (s.clientName || ""));
+  });
+
+  return seen.size;
+}
+
+// Bouton "Rapport" (si tu l’appelles depuis l’UI)
+function openDailyReportForSelectedDate() {
+  const dateStr = getSelectedSalesDate();
+  openDailyReportForDate(dateStr);
+}
+
+function openDailyReportForDate(dateStr) {
+  const daySales = getSalesForDate(dateStr);
+  const dayExpenses = getExpensesForDate(dateStr);
+  const uniqueClients = getUniqueClientsCountForDate(dateStr);
+
+  if (!daySales.length) {
+    alert("Aucune vente pour ce jour.");
+    return;
+  }
+
+  const dateLabel = new Date(dateStr + "T00:00:00").toLocaleDateString("fr-FR");
+
+  // ===== Résumé ventes + remises =====
+  let totalSalesAmount = 0;
+  let totalDiscountAmount = 0;
+
+  // Tableau produits : name -> { qty, amount, times[] }
+  const productMap = {};
+
+  daySales.forEach(sale => {
+    const saleAmount = Number(sale.total) || 0;
+    totalSalesAmount += saleAmount;
+
+    const saleDiscountTotal =
+      (Number(sale.promoDiscount) || 0) +
+      (Number(sale.manualDiscount) || 0) +
+      (Number(sale.loyaltyDiscount) || 0) +
+      (Number(sale.birthdayDiscount) || 0) ||
+      (Number(sale.discountAmount) || 0);
+
+    totalDiscountAmount += saleDiscountTotal;
+
+    // heure vente
+    const saleTime = new Date(sale.date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+
+    // baseSum = somme des lignes "avant remise" pour répartir la remise
+    let baseSum = 0;
+
+    (sale.items || []).forEach(item => {
+      const qty = Number(item.qty) || 0;
+      if (!qty) return;
+
+      // Priorité: prix enregistré dans item.price (si ton Apps Script le renvoie)
+      let unit = Number(item.price) || 0;
+
+      // Sinon: essayer de retrouver par nom dans products (si dispo)
+      if (!unit && item.name) {
+        const p = (products || []).find(pp => String(pp.name).toLowerCase() === String(item.name).toLowerCase());
+        if (p) unit = Number(p.price) || 0;
+      }
+
+      baseSum += unit * qty;
+    });
+
+    // Répartition par produit
+    (sale.items || []).forEach(item => {
+      const name = item.name || "Produit";
+      const qty = Number(item.qty) || 0;
+      if (!qty) return;
+
+      let unit = Number(item.price) || 0;
+      if (!unit && item.name) {
+        const p = (products || []).find(pp => String(pp.name).toLowerCase() === String(item.name).toLowerCase());
+        if (p) unit = Number(p.price) || 0;
+      }
+
+      const lineBase = unit * qty;
+
+      // si baseSum=0, on ne répartit pas la remise (évite division par 0)
+      let lineFinal = lineBase;
+      if (baseSum > 0 && saleDiscountTotal > 0) {
+        const ratio = lineBase / baseSum;
+        const lineDiscount = Math.round(saleDiscountTotal * ratio);
+        lineFinal = Math.max(0, lineBase - lineDiscount);
+      }
+
+      if (!productMap[name]) {
+        productMap[name] = { qty: 0, amount: 0, times: [] };
+      }
+      productMap[name].qty += qty;
+      productMap[name].amount += lineFinal;
+      productMap[name].times.push(saleTime);
+    });
+  });
+
+  const salesCount = daySales.length;
+  const averageBasket = salesCount ? Math.round(totalSalesAmount / salesCount) : 0;
+
+  // ===== Frais du jour =====
+  let totalExpensesAmount = 0;
+  let expensesRowsHtml = "";
+
+  if (!dayExpenses.length) {
+    expensesRowsHtml = `<tr><td colspan="3">Aucun frais enregistré pour ce jour.</td></tr>`;
+  } else {
+    dayExpenses.forEach(exp => {
+      const d = new Date(exp.date);
+      const timeStr = isNaN(d.getTime()) ? "" : d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+
+      const amount = Number(exp.amount) || 0;
+      totalExpensesAmount += amount;
+
+      expensesRowsHtml += `
+        <tr>
+          <td>${timeStr}</td>
+          <td>${exp.label || ""}</td>
+          <td style="text-align:right;">${amount} FCFA</td>
+        </tr>
+      `;
+    });
+  }
+
+  // ===== Tableau produits vendus =====
+  const productRows = Object.keys(productMap).sort().map(name => {
+    const info = productMap[name];
+    const timesStr = (info.times || []).join(", ");
+    const avgUnit = info.qty ? Math.round(info.amount / info.qty) : 0;
+
+    return `
+      <tr>
+        <td>${name}</td>
+        <td style="text-align:center;">${info.qty}</td>
+        <td style="text-align:right;">${avgUnit} FCFA</td>
+        <td style="text-align:right;">${Math.round(info.amount)} FCFA</td>
+        <td>${timesStr}</td>
+      </tr>
+    `;
+  }).join("");
+
+  const netResult = totalSalesAmount - totalExpensesAmount;
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+      <meta charset="UTF-8">
+      <title>Rapport du ${dateLabel} - BSK</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 13px; margin: 20px; color: #111827; }
+        .report-container { max-width: 900px; margin: 0 auto; }
+        h1 { margin: 0; font-size: 22px; }
+        .subtitle { font-size: 12px; color: #6b7280; margin-top: 4px; }
+        h2 { font-size: 16px; margin-top: 16px; margin-bottom: 6px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
+        table { border-collapse: collapse; width: 100%; margin-top: 6px; }
+        th, td { border: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; }
+        th { background: #f3f4f6; font-size: 12px; }
+        .summary { margin-top: 8px; font-size: 13px; }
+        .print-btn { margin-top: 16px; padding: 8px 14px; font-size: 13px; }
+      </style>
+    </head>
+    <body>
+      <div class="report-container">
+        <h1>Rapport journalier</h1>
+        <div class="subtitle">Date : ${dateLabel} · BSK</div>
+
+        <h2>1. Résumé des ventes du jour</h2>
+        <div class="summary">
+          Nombre de ventes : <strong>${salesCount}</strong><br>
+          Nombre de clients : <strong>${uniqueClients}</strong><br>
+          Chiffre d'affaires (après remises) : <strong>${totalSalesAmount} FCFA</strong><br>
+          Total des remises : <strong>${totalDiscountAmount} FCFA</strong><br>
+          Panier moyen : <strong>${averageBasket} FCFA</strong>
+        </div>
+
+        <h2>2. Produits vendus (prix après remise)</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Produit</th>
+              <th>Quantité vendue</th>
+              <th>Prix moyen</th>
+              <th>Montant total</th>
+              <th>Heure(s)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${productRows || `<tr><td colspan="5">Aucun détail produit.</td></tr>`}
+          </tbody>
+        </table>
+
+        <h2>3. Frais / dépenses du jour</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Heure</th>
+              <th>Motif</th>
+              <th>Montant</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${expensesRowsHtml}
+            <tr>
+              <td colspan="2" style="text-align:right;"><strong>Total des frais</strong></td>
+              <td style="text-align:right;"><strong>${totalExpensesAmount} FCFA</strong></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>4. Synthèse CA du jour</h2>
+        <div class="summary">
+          Chiffre d'affaires (ventes) : <strong>${totalSalesAmount} FCFA</strong><br>
+          Moins frais du jour : <strong>${totalExpensesAmount} FCFA</strong><br>
+          Résultat net approximatif : <strong>${netResult} FCFA</strong>
+        </div>
+
+        <button class="print-btn" onclick="window.print()">Imprimer / Enregistrer en PDF</button>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const win = window.open("", "_blank", "width=1000,height=900");
+  if (!win) {
+    alert("Autorisez les pop-up pour afficher le rapport (blocage navigateur).");
+    return;
+  }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}
+
 // ================== INIT ==================
 document.addEventListener("DOMContentLoaded", () => {
   showView("caisse");
