@@ -98,7 +98,9 @@ let dashboardChart = null;
 let lastTicketSale = null;
 let stockHistory = [];
 let expenses = [];
-
+let credits = [];
+let creditPayments = [];
+let pendingCreditClient = null;
 // ================== STOCK <-> SHEETS ==================
 function fetchStockFromSheet() {
   const callbackName = "onStockFromSheet_" + Date.now();
@@ -327,7 +329,60 @@ function sendPerfumesToSheet() {
   document.body.appendChild(iframe);
   setTimeout(() => iframe.remove(), 5000);
 }
+// ================== CREDIT <-> SHEETS ==================
+function fetchCreditsFromSheet() {
+  const cb = "onCredits_" + Date.now();
+  const script = document.createElement("script");
 
+  window[cb] = function (data) {
+    try {
+      credits = Array.isArray(data?.credits) ? data.credits : [];
+    } finally {
+      renderCreditsUI();
+      delete window[cb];
+      script.remove();
+    }
+  };
+
+  script.src = `${SHEET_URL}?action=getCredits&callback=${cb}`;
+  script.onerror = () => console.warn("Erreur getCredits");
+  document.body.appendChild(script);
+}
+
+function fetchCreditPaymentsFromSheet() {
+  const cb = "onCreditPays_" + Date.now();
+  const script = document.createElement("script");
+
+  window[cb] = function (data) {
+    try {
+      creditPayments = Array.isArray(data?.payments) ? data.payments : [];
+    } finally {
+      renderCreditPaymentsTable();
+      renderCreditTotals();
+      delete window[cb];
+      script.remove();
+    }
+  };
+
+  script.src = `${SHEET_URL}?action=getCreditPayments&callback=${cb}`;
+  script.onerror = () => console.warn("Erreur getCreditPayments");
+  document.body.appendChild(script);
+}
+
+function sendCreditToSheet(credit) {
+  const payload = encodeURIComponent(JSON.stringify({ credit }));
+  fetch(`${SHEET_URL}?action=addCredit&payload=${payload}`).catch(console.error);
+}
+
+function updateCreditOnSheet(creditId, amountDue, status) {
+  const payload = encodeURIComponent(JSON.stringify({ update: { creditId, amountDue, status } }));
+  fetch(`${SHEET_URL}?action=updateCredit&payload=${payload}`).catch(console.error);
+}
+
+function sendCreditPaymentToSheet(payment) {
+  const payload = encodeURIComponent(JSON.stringify({ payment }));
+  fetch(`${SHEET_URL}?action=addCreditPayment&payload=${payload}`).catch(console.error);
+}
 // ================== NAVIGATION ==================
 function showView(viewName) {
   document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
@@ -352,7 +407,9 @@ function showView(viewName) {
     renderExpensesTable();
   } else if (viewName === "barparfum" || viewName === "bar-parfum") {
     renderPerfumeBar();
-  }
+  } else if (viewName === "credit") {
+    renderCreditsUI();
+}
 }
 
 // ================== CAISSE ==================
@@ -425,6 +482,204 @@ function savePromo() {
   alert("Promo enregistrée.");
   closePromoPopup();
   renderProductsForSale();
+}
+
+function onToggleCreditMode(checked) {
+  if (checked) {
+    openCreditSaleModal();
+  } else {
+    pendingCreditClient = null;
+  }
+}
+
+function openCreditSaleModal() {
+  document.getElementById("credit-client-name").value = "";
+  document.getElementById("credit-client-phone").value = "";
+  document.getElementById("credit-sale-modal").classList.remove("hidden");
+}
+
+function closeCreditSaleModal() {
+  document.getElementById("credit-sale-modal").classList.add("hidden");
+  const cb = document.getElementById("credit-mode");
+  if (cb) cb.checked = false;
+  pendingCreditClient = null;
+}
+
+function confirmCreditClientInfo() {
+  const name = (document.getElementById("credit-client-name").value || "").trim();
+  const phone = (document.getElementById("credit-client-phone").value || "").trim();
+
+  if (!name) {
+    alert("Merci de renseigner le nom du client.");
+    return;
+  }
+
+  pendingCreditClient = { name, phone };
+  document.getElementById("credit-sale-modal").classList.add("hidden");
+
+  alert("Client crédit enregistré. Ajoute maintenant les produits au panier puis valide la vente.");
+}
+
+function markCreditAsValidated(creditId) {
+  const c = credits.find(x => String(x.id) === String(creditId));
+  if (!c) return alert("Crédit introuvable.");
+
+  const remaining = Number(c.amountDue) || 0;
+  if (remaining <= 0) return alert("Crédit déjà réglé.");
+
+  const paid = Number(prompt(`Montant payé (reste ${remaining} FCFA) :`));
+  if (!paid || paid <= 0) return alert("Montant invalide.");
+  if (paid > remaining) return alert("Le montant payé dépasse le reste.");
+
+  const method = prompt("Méthode (cash/wave/orange) :", "cash") || "cash";
+  const note = prompt("Note (optionnel) :", "") || "";
+
+  // 1) paiement (historique)
+  const payment = {
+    id: Date.now(),
+    creditId: String(c.id),
+    amount: paid,
+    date: new Date().toISOString(),
+    method,
+    note
+  };
+  creditPayments.push(payment);
+  sendCreditPaymentToSheet(payment);
+
+  // 2) mise à jour du crédit
+  c.amountDue = remaining - paid;
+  if (c.amountDue <= 0) {
+    c.amountDue = 0;
+    c.status = "closed";
+  } else {
+    c.status = "open";
+  }
+  updateCreditOnSheet(String(c.id), c.amountDue, c.status);
+
+  // 3) ✅ ajouter le paiement dans les ventes du jour
+  const sale = {
+    id: Date.now(),
+    date: new Date().toISOString(),
+    baseTotal: paid,
+    total: paid,
+    items: [{ productId: 0, name: "Règlement crédit", qty: 1, price: paid, lineTotal: paid }],
+    paymentMethod: method,
+    promoDiscount: 0,
+    manualDiscount: 0,
+    birthdayDiscount: 0,
+    discountAmount: 0,
+    discountReason: `Paiement crédit (${c.name || ""}${c.phone ? " - " + c.phone : ""})`,
+    clientId: "",
+    clientName: c.name || "",
+    clientPhone: c.phone || "",
+    wholesale: false
+  };
+
+  sales.push(sale);
+  saveSales(sales);
+  sendSaleToSheet(sale);
+
+  // UI refresh
+  renderCreditsUI();
+  updateSalesViewForSelectedDate();
+  loadDashboardStats?.();
+
+  alert(c.status === "closed"
+    ? "Crédit totalement réglé ✅ (paiement ajouté aux ventes du jour)"
+    : `Paiement enregistré ✅. Reste : ${c.amountDue} FCFA`
+  );
+}
+// --------AFFICHAGE CREDIT --------
+function renderCreditsUI() {
+  renderCreditsTable();
+  renderCreditPaymentsTable();
+  renderCreditTotals();
+}
+
+function renderCreditTotals() {
+  const outstanding = (credits || [])
+    .filter(c => (c.status || "open") !== "closed")
+    .reduce((sum, c) => sum + (Number(c.amountDue) || 0), 0);
+
+  const paidTotal = (creditPayments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+  const openCount = (credits || []).filter(c => (c.status || "open") !== "closed").length;
+
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+  set("cr-outstanding", outstanding);
+  set("cr-paid", paidTotal);
+  set("cr-open-count", openCount);
+}
+
+function renderCreditsTable() {
+  const tbody = document.getElementById("credits-table-body");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+
+  if (!credits || credits.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5">Aucune vente à crédit.</td></tr>`;
+    renderCreditTotals();
+    return;
+  }
+
+  const sorted = [...credits].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  sorted.forEach(c => {
+    const d = new Date(c.createdAt);
+    const dateStr = isNaN(d.getTime()) ? (c.createdAt || "") : d.toLocaleString("fr-FR");
+    const due = Number(c.amountDue) || 0;
+    const closed = (c.status === "closed");
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${c.name || ""}</td>
+      <td>${c.phone || ""}</td>
+      <td><strong>${due}</strong> FCFA ${closed ? "<br><small>✅ Réglé</small>" : ""}</td>
+      <td>${dateStr}</td>
+      <td>
+        <button class="primary-btn" onclick="markCreditAsValidated('${c.id}')" ${closed ? "disabled" : ""}>
+          Valider
+        </button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  renderCreditTotals();
+}
+
+function renderCreditPaymentsTable() {
+  const tbody = document.getElementById("credit-payments-body");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+
+  if (!creditPayments || creditPayments.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5">Aucun paiement enregistré.</td></tr>`;
+    return;
+  }
+
+  const sorted = [...creditPayments].sort((a,b) => new Date(b.date) - new Date(a.date));
+
+  sorted.slice(0, 300).forEach(p => {
+    const d = new Date(p.date);
+    const dateStr = isNaN(d.getTime()) ? (p.date || "") : d.toLocaleString("fr-FR");
+
+    const c = (credits || []).find(x => String(x.id) === String(p.creditId));
+    const clientLabel = c ? `${c.name || ""}${c.phone ? " (" + c.phone + ")" : ""}` : `Crédit ${p.creditId}`;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${dateStr}</td>
+      <td>${clientLabel}</td>
+      <td><strong>${Number(p.amount) || 0}</strong> FCFA</td>
+      <td>${p.method || "cash"}</td>
+      <td>${p.note || ""}</td>
+    `;
+    tbody.appendChild(tr);
+  });
 }
 
 // -------- PRODUITS (AFFICHAGE CAISSE) --------
@@ -707,18 +962,16 @@ function confirmSale() {
     return;
   }
 
+  const isCreditSale = document.getElementById("credit-mode")?.checked === true;
+
+  // Vérif stock
   for (const item of cart) {
     const product = products.find((p) => p.id === item.productId);
-    if (!product) {
-      alert("Produit introuvable.");
-      return;
-    }
-    if (item.qty > product.stock) {
-      alert(`Stock insuffisant pour ${product.name}`);
-      return;
-    }
+    if (!product) return alert("Produit introuvable.");
+    if (item.qty > product.stock) return alert(`Stock insuffisant pour ${product.name}`);
   }
 
+  // Déstockage
   cart.forEach((item) => {
     const product = products.find((p) => p.id === item.productId);
     if (product) product.stock = Math.max(0, product.stock - item.qty);
@@ -728,17 +981,52 @@ function confirmSale() {
   sendStockToSheet(products);
 
   const totals = calculateCartTotals();
+
+  // ✅ VENTE À CRÉDIT
+  if (isCreditSale) {
+    if (!pendingCreditClient) {
+      alert("Infos client crédit manquantes.");
+      return;
+    }
+
+    const credit = {
+      id: Date.now(),
+      name: pendingCreditClient.name,
+      phone: pendingCreditClient.phone,
+      originalAmount: totals.finalTotal,
+      amountDue: totals.finalTotal,
+      createdAt: new Date().toISOString(),
+      items: cart.map(i => ({ name: i.name, qty: i.qty, price: i.price })),
+      status: "open"
+    };
+
+    credits.push(credit);
+    sendCreditToSheet(credit);
+    renderCreditsUI();
+
+    clearCart();
+    renderProductsForSale();
+
+    pendingCreditClient = null;
+    const cb = document.getElementById("credit-mode");
+    if (cb) cb.checked = false;
+
+    alert("Vente enregistrée en CRÉDIT.");
+    return; // stop ici
+  }
+
+  // ✅ VENTE NORMALE (ton code existant)
   const methodSelect = document.getElementById("payment-method");
   const paymentMethod = methodSelect ? methodSelect.value : "cash";
   const wholesaleMode = document.getElementById("wholesale-mode")?.checked;
 
   const select = document.getElementById("client-select");
-  let clientId = null;
+  let clientId = "";
   let clientName = "";
   let clientPhone = "";
 
   if (select && select.value && !wholesaleMode) {
-    clientId = select.value; // garder string
+    clientId = select.value;
     const client = clients.find((c) => String(c.id) === String(clientId));
     if (client) {
       clientName = client.name;
@@ -809,7 +1097,6 @@ function confirmSale() {
 
   alert("Vente enregistrée !");
 }
-
 // ================== TICKET DE CAISSE ==================
 function openReceiptWindow(sale) {
   const boutiqueName = "BSK";
@@ -2137,6 +2424,8 @@ document.addEventListener("DOMContentLoaded", () => {
   fetchSalesFromSheet();
   fetchStockHistoryFromSheet();
   fetchExpensesFromSheet();
+  fetchCreditsFromSheet();
+  fetchCreditPaymentsFromSheet();
 
   const discountInput = document.getElementById("cart-discount");
   if (discountInput) discountInput.addEventListener("input", renderCart);

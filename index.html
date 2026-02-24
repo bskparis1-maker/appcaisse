@@ -21,6 +21,7 @@
     <nav>
       <button onclick="showView('caisse')">Caisse</button>
       <button onclick="showView('ventes')">Ventes</button>
+      <button onclick="showView('credit')">Crédit</button> <!-- ✅ AJOUT -->
       <button onclick="showView('clients')">Clients</button>
       <button onclick="showView('produits')">Produits</button>
       <button onclick="showView('dashboard')">Tableau de bord</button>
@@ -37,9 +38,16 @@
         <button class="secondary-btn" onclick="openPromoModal()">
           Activer / régler la promo
         </button>
+
         <label style="display:block; margin-top:8px;">
           <input type="checkbox" id="wholesale-mode" />
           Vente en gros (prix personnalisés, remises désactivées)
+        </label>
+
+        <!-- ✅ AJOUT : MODE VENTE À CRÉDIT -->
+        <label style="display:block; margin-top:8px;">
+          <input type="checkbox" id="credit-mode" onchange="onToggleCreditMode(this.checked)" />
+          Vente à crédit (infos client + produits)
         </label>
       </div>
 
@@ -353,6 +361,44 @@
       </table>
     </section>
 
+    <!-- ====== ONGLET CREDIT ====== -->
+    <section id="view-credit" class="view hidden">
+      <h2>Crédit</h2>
+
+      <div class="cards">
+        <div class="card">Reste à encaisser<br><strong id="cr-outstanding">0</strong> FCFA</div>
+        <div class="card">Déjà encaissé<br><strong id="cr-paid">0</strong> FCFA</div>
+        <div class="card">Crédits ouverts<br><strong id="cr-open-count">0</strong></div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Nom</th>
+            <th>Numéro</th>
+            <th>Reste</th>
+            <th>Date</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="credits-table-body"></tbody>
+      </table>
+
+      <h3>Historique des paiements</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Client</th>
+            <th>Montant</th>
+            <th>Méthode</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody id="credit-payments-body"></tbody>
+      </table>
+    </section>
+
     <!-- ============ VUE BAR À PARFUM ============ -->
     <section id="view-bar-parfum" class="view hidden">
       <h2>Bar à parfum</h2>
@@ -393,7 +439,25 @@
     </div>
   </div>
 
-  <!-- ✅ POPUP INFOS CLIENT (MANQUANTE AVANT => CLIC NE FONCTIONNAIT PAS) -->
+  <!-- MODALE VENTE A CREDIT (infos client) -->
+  <div id="credit-sale-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Vente à crédit - Infos client</h3>
+
+      <label>Nom</label>
+      <input id="credit-client-name" type="text" placeholder="Nom du client">
+
+      <label>Numéro</label>
+      <input id="credit-client-phone" type="text" placeholder="Téléphone">
+
+      <div class="modal-actions">
+        <button class="primary-btn" onclick="confirmCreditClientInfo()">Valider</button>
+        <button class="secondary-btn" onclick="closeCreditSaleModal()">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✅ POPUP INFOS CLIENT -->
   <div id="popup-client" class="modal hidden">
     <div class="modal-content" style="max-width:650px;">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
