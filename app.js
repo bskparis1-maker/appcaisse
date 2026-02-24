@@ -23,7 +23,8 @@ const defaultProducts = [
   { id: 14, name: "Figue d’amour", price: 5000, stock: 2 },
   { id: 15, name: "Linge de maman", price: 5000, stock: 2 },
   { id: 16, name: "Bonbon", price: 5000, stock: 2 },
-  { id: 17, name: "Sweet Cotton", price: 5000, stock: 0 }
+  { id: 17, name: "Sweet Cotton", price: 5000, stock: 0 },
+  { id: 18, name: "Couture", price: 0, stock: 999999 }
 ];
 
 // ================== BAR À PARFUM ==================
@@ -474,6 +475,16 @@ function addToCart(productId) {
 
   let unitPrice = getPromoPrice(product.price);
   let wholesale = false;
+  
+// ✅ Produit "Couture" : prix libre à chaque vente
+if (product.name.toLowerCase() === "couture") {
+  const customPrice = Number(prompt("Prix Couture (FCFA) :"));
+  if (!customPrice || customPrice <= 0) {
+    alert("Prix invalide.");
+    return;
+  }
+  unitPrice = customPrice;
+}
 
   if (wholesaleMode) {
     const custom = Number(prompt(`Prix unitaire (gros) pour ${product.name} (FCFA) :`));
@@ -516,19 +527,19 @@ function calculateCartTotals() {
   cart.forEach((item) => {
     baseTotal += item.price * item.qty;
 
-    if (!wholesaleMode && !item.wholesale) {
-      if (!promoPeriodActive && item.basePrice === 8000) {
-        promo8000Qty += item.qty;
-      }
+    const isCouture = (item.name || "").toLowerCase() === "couture";
 
-      if (
-        item.basePrice === 3000 &&
-        item.name &&
-        item.name.toLowerCase().includes("thiouraye")
-      ) {
-        thiourayeQty += item.qty;
-      }
-    }
+if (!wholesaleMode && !item.wholesale && !isCouture) {
+  if (!promoPeriodActive && item.basePrice === 8000) promo8000Qty += item.qty;
+
+  if (
+    item.basePrice === 3000 &&
+    item.name &&
+    item.name.toLowerCase().includes("thiouraye")
+  ) {
+    thiourayeQty += item.qty;
+  }
+}
   });
 
   let promoDiscount = 0;
