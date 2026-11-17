@@ -527,3 +527,236 @@ table button:hover {
   border-radius: 12px;
   box-shadow: 0 20px 50px rgba(0,0,0,0.25);
 }
+/* ============ ONGLET CRÉDIT : cartes (manquait dans le CSS) ============ */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.cards .card {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.cards .card strong {
+  font-size: 18px;
+  color: #111827;
+}
+
+/* Champs des modales (manquaient de style) */
+.modal-content label {
+  display: block;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.modal-content input {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  font-size: 14px;
+  margin-top: 3px;
+}
+
+.modal-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+/* ============ ESPACE PRO ============ */
+nav button.nav-pro {
+  background: linear-gradient(135deg, #ec4899, #f97316);
+}
+
+.pro-lock {
+  max-width: 340px;
+  margin: 20px auto;
+  text-align: center;
+  padding: 18px;
+  border-radius: 14px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+}
+
+.pro-lock form {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.pro-lock input {
+  width: 120px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  text-align: center;
+  letter-spacing: 0.3em;
+  font-size: 16px;
+  margin-top: 8px;
+}
+
+.pro-error {
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.pro-summary {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.pro-summary-item {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.pro-summary-item.pos { background: #f0fdf4; border-color: #bbf7d0; }
+.pro-summary-item.neg { background: #fef2f2; border-color: #fecaca; }
+
+.pro-summary-item .label { font-size: 12px; color: #6b7280; }
+.pro-summary-item .value { font-size: 19px; font-weight: 700; margin: 2px 0; }
+.pro-summary-item .detail { font-size: 11px; color: #6b7280; }
+
+.text-pos { color: #15803d; }
+.text-neg { color: #b91c1c; }
+
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.badge.pos { background: #dcfce7; color: #15803d; }
+.badge.neg { background: #fee2e2; color: #b91c1c; }
+
+.dashboard-summary .card.pro-net.pos { background: #f0fdf4; border-color: #86efac; }
+.dashboard-summary .card.pro-net.neg { background: #fef2f2; border-color: #fca5a5; }
+.dashboard-summary .card.pro-net.pos .value { color: #15803d; }
+.dashboard-summary .card.pro-net.neg .value { color: #b91c1c; }
+
+.pro-period-btn.active {
+  background: #111827;
+  color: #ffffff;
+  border-color: #111827;
+}
+
+/* Barre d'équilibre */
+.breakeven {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+
+.breakeven-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.breakeven-bar {
+  position: relative;
+  height: 20px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  overflow: hidden;
+}
+
+.breakeven-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ef4444, #f97316);
+  transition: width 0.4s ease;
+}
+
+.breakeven-fill.reached {
+  background: linear-gradient(90deg, #10b981, #22c55e);
+}
+
+/* l'équilibre (100%) est placé aux 2/3 de la barre pour voir aussi le dépassement */
+.breakeven-mark {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: 66.666%;
+  width: 3px;
+  background: #111827;
+}
+
+.breakeven-scale {
+  position: relative;
+  height: 16px;
+  font-size: 11px;
+  color: #6b7280;
+}
+.breakeven-scale span { position: absolute; top: 2px; }
+.breakeven-scale span:nth-child(1) { left: 0; }
+.breakeven-scale span:nth-child(2) { left: 66.666%; transform: translateX(-50%); }
+.breakeven-scale span:nth-child(3) { right: 0; }
+
+/* Réglages */
+.pro-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.pro-row {
+  display: grid;
+  grid-template-columns: 1fr 110px 34px;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.pro-cost-row {
+  display: grid;
+  grid-template-columns: 1fr 100px;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 5px;
+  font-size: 14px;
+}
+
+.pro-row input,
+.pro-cost-row input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 7px;
+  border: 1px solid #d1d5db;
+  font-size: 14px;
+}
+
+.pro-cost-row input.missing {
+  border-color: #f97316;
+  background: #fff7ed;
+}
+
+.pro-row .del-btn {
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+  cursor: pointer;
+}

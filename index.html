@@ -27,6 +27,7 @@
       <button onclick="showView('dashboard')">Tableau de bord</button>
       <button onclick="showView('frais')">Frais</button>
       <button onclick="showView('bar-parfum')">Bar à parfum</button>
+      <button class="nav-pro" onclick="showView('pro')">Pro 🔒</button>
     </nav>
 
     <!-- ============ VUE CAISSE ============ -->
@@ -411,6 +412,100 @@
         </thead>
         <tbody id="perfume-table-body"></tbody>
       </table>
+    </section>
+
+    <!-- ============ VUE PRO (protégée par code) ============ -->
+    <section id="view-pro" class="view hidden">
+      <h2>Espace Pro</h2>
+
+      <!-- Verrou -->
+      <div id="pro-lock" class="pro-lock">
+        <div style="font-size:34px;">🔒</div>
+        <p class="help-text">Entre le code pour voir les résultats de la boutique.</p>
+        <form id="pro-lock-form" onsubmit="unlockPro(event)">
+          <input type="password" id="pro-password" inputmode="numeric" maxlength="10" placeholder="Code" autocomplete="off" />
+          <button type="submit" class="primary-btn">Déverrouiller</button>
+        </form>
+        <p id="pro-lock-error" class="pro-error hidden">Code incorrect.</p>
+      </div>
+
+      <!-- Contenu -->
+      <div id="pro-content" class="hidden">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <h3 style="margin:0;">Bénéfice ou perte ?</h3>
+          <button class="secondary-btn" onclick="lockPro()">🔒 Verrouiller</button>
+        </div>
+        <div id="pro-summary" class="pro-summary"></div>
+
+        <h3>Résultat détaillé</h3>
+        <div class="dashboard-filters">
+          <div class="dashboard-quick">
+            <button class="secondary-btn pro-period-btn" data-period="day" onclick="setProPeriod('day')">Jour</button>
+            <button class="secondary-btn pro-period-btn" data-period="week" onclick="setProPeriod('week')">Semaine</button>
+            <button class="secondary-btn pro-period-btn" data-period="month" onclick="setProPeriod('month')">Mois</button>
+            <button class="secondary-btn pro-period-btn" data-period="year" onclick="setProPeriod('year')">Année</button>
+          </div>
+          <div>
+            <label>Date de référence : <input type="date" id="pro-ref-date" onchange="setProRefDate(this.value)" /></label>
+            <button class="secondary-btn" onclick="setProRefDate(todayLocalStr())">Aujourd'hui</button>
+          </div>
+          <div id="pro-range-label" class="help-text" style="margin:0;"></div>
+        </div>
+
+        <div class="dashboard-summary">
+          <div class="card"><div class="label">Chiffre d'affaires (après remises)</div><div class="value"><span id="pro-revenue">0</span> FCFA</div></div>
+          <div class="card"><div class="label">Coût des produits vendus</div><div class="value"><span id="pro-cogs">0</span> FCFA</div></div>
+          <div class="card"><div class="label">Marge brute</div><div class="value"><span id="pro-margin">0</span> FCFA</div><div class="label" id="pro-margin-rate"></div></div>
+          <div class="card"><div class="label">Charges fixes (période)</div><div class="value"><span id="pro-fixed">0</span> FCFA</div></div>
+          <div class="card" id="pro-expenses-card"><div class="label">Frais de l'onglet Frais</div><div class="value"><span id="pro-expenses">0</span> FCFA</div><div class="label" id="pro-expenses-note"></div></div>
+          <div class="card pro-net" id="pro-net-card"><div class="label">Résultat net</div><div class="value" id="pro-net">0 FCFA</div><div class="label" id="pro-net-label"></div></div>
+        </div>
+
+        <label class="help-text" style="display:block; margin-top:8px;">
+          <input type="checkbox" id="pro-include-expenses" onchange="toggleProExpenses(this.checked)" />
+          Déduire aussi les dépenses saisies dans l'onglet « Frais »
+          (⚠️ ne coche pas si tu y notes déjà le loyer/les salaires ou tes achats de marchandise : ils seraient comptés 2 fois)
+        </label>
+
+        <!-- Barre d'équilibre -->
+        <div class="breakeven">
+          <div class="breakeven-head">
+            <strong>Barre d'équilibre (seuil de rentabilité)</strong>
+            <span id="breakeven-pct">—</span>
+          </div>
+          <div class="breakeven-bar">
+            <div class="breakeven-fill" id="breakeven-fill"></div>
+            <div class="breakeven-mark" title="Point d'équilibre"></div>
+          </div>
+          <div class="breakeven-scale"><span>0</span><span>Équilibre</span><span>+50%</span></div>
+          <p id="breakeven-text" class="help-text"></p>
+        </div>
+
+        <h3>Détail par produit (période)</h3>
+        <table>
+          <thead>
+            <tr><th>Produit</th><th>Qté</th><th>CA (prix de vente)</th><th>Coût</th><th>Marge</th></tr>
+          </thead>
+          <tbody id="pro-products-body"></tbody>
+        </table>
+        <p id="pro-warning" class="help-text"></p>
+
+        <div class="pro-settings">
+          <div class="payment-section">
+            <h3>Charges fixes mensuelles</h3>
+            <p class="help-text">Modifie directement les montants, c'est enregistré tout seul.</p>
+            <div id="pro-charges-list"></div>
+            <button class="secondary-btn" onclick="addProCharge()">+ Ajouter une charge</button>
+            <p id="pro-charges-total" class="total-label"></p>
+          </div>
+
+          <div class="payment-section">
+            <h3>Coûts de revient des produits</h3>
+            <p class="help-text">Ce que te coûte 1 unité. Les cases en orange sont à remplir.</p>
+            <div id="pro-costs-list"></div>
+          </div>
+        </div>
+      </div>
     </section>
   </div>
 

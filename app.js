@@ -121,7 +121,8 @@ function fetchStockFromSheet() {
       renderProductsForSale();
       renderProductsTable();
       renderCart();
-      fetchSalesFromSheet();
+      // ✅ (les ventes sont déjà chargées au démarrage : on ne les recharge plus 2 fois)
+      refreshProIfVisible();
       delete window[callbackName];
       script.remove();
     }
@@ -133,7 +134,6 @@ function fetchStockFromSheet() {
     renderProductsForSale();
     renderProductsTable();
     renderCart();
-    fetchSalesFromSheet();
   };
   document.body.appendChild(script);
 }
@@ -266,6 +266,7 @@ function fetchSalesFromSheet() {
       renderClientsTable();
       // si dashboard affiché, on rafraîchit sans casser
       loadDashboardStats?.();
+      refreshProIfVisible();
       delete window[callbackName];
       script.remove();
     }
@@ -339,6 +340,7 @@ function fetchCreditsFromSheet() {
       credits = Array.isArray(data?.credits) ? data.credits : [];
     } finally {
       renderCreditsUI();
+      refreshProIfVisible();
       delete window[cb];
       script.remove();
     }
@@ -409,7 +411,9 @@ function showView(viewName) {
     renderPerfumeBar();
   } else if (viewName === "credit") {
     renderCreditsUI();
-}
+  } else if (viewName === "pro") {
+    renderProView();
+  }
 }
 
 // ================== CAISSE ==================
@@ -963,6 +967,14 @@ function confirmSale() {
   }
 
   const isCreditSale = document.getElementById("credit-mode")?.checked === true;
+
+  // ✅ CORRECTION : on vérifie les infos crédit AVANT de retirer le stock.
+  // Avant, le stock était déjà retiré puis la vente bloquée → si on recliquait,
+  // le stock était retiré 2 fois.
+  if (isCreditSale && !pendingCreditClient) {
+    alert("Infos client crédit manquantes. Décoche puis recoche « Vente à crédit ».");
+    return;
+  }
 
   // Vérif stock
   for (const item of cart) {
@@ -1572,6 +1584,7 @@ function fetchExpensesFromSheet() {
         expenses = loadExpensesFromLocal();
       }
       renderExpensesTable();
+      refreshProIfVisible();
     } finally {
       delete window[callbackName];
       script.remove();
@@ -2412,6 +2425,487 @@ function openDailyReportForDate(dateStr) {
   win.document.open();
   win.document.write(html);
   win.document.close();
+}
+
+// =====================================================================
+// ================== ESPACE PRO (bénéfice / perte) ==================
+// =====================================================================
+// Calcul automatique à partir des VRAIES ventes de la caisse :
+//   Résultat = CA (après remises) − coût de revient des produits vendus − charges fixes
+//
+// ⚠️ Le code est visible dans ce fichier : ça bloque un employé curieux,
+// pas quelqu'un qui sait lire du code.
+const PRO_PASSWORD = "0507";
+const PRO_UNLOCK_KEY = "bsk_pro_unlocked";
+const PRO_SETTINGS_KEY = "bsk_pro_settings";
+
+// Coûts de revient par défaut (modifiables dans l'onglet Pro)
+const DEFAULT_PRO_COSTS = {
+  "bar à musc": 2000,
+  "bar à parfum": 1500,
+  "bar à thiouraye": 1000,
+  "brume butterfly": 2000,
+  "brume nefertiti": 2000,
+  "brume summer": 2000,
+  "brume crush": 2000,
+  "jardin suspendu": 2000,
+  "nuit de noce": 2000,
+  "figue d'amour": 2000,
+  "linge de maman": 2000,
+  "bonbon": 2000,
+  "sweet cotton": 2000,
+  "couture": 0
+};
+
+const DEFAULT_PRO_SETTINGS = {
+  fixedCharges: [
+    { name: "Loyer", amount: 500000 },
+    { name: "Salaires", amount: 400000 },
+    { name: "Autres frais", amount: 100000 }
+  ],
+  costs: { ...DEFAULT_PRO_COSTS },
+  includeExpenses: false
+};
+
+// Lignes de vente qui ne sont pas des produits (pas de coût de revient)
+const PRO_NON_PRODUCT_ITEMS = ["règlement crédit"];
+
+const proState = { period: "month", refDate: null };
+
+function loadProSettings() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PRO_SETTINGS_KEY) || "null");
+    if (!raw) return JSON.parse(JSON.stringify(DEFAULT_PRO_SETTINGS));
+    return {
+      fixedCharges: Array.isArray(raw.fixedCharges) ? raw.fixedCharges : DEFAULT_PRO_SETTINGS.fixedCharges,
+      costs: { ...DEFAULT_PRO_COSTS, ...(raw.costs || {}) },
+      includeExpenses: !!raw.includeExpenses
+    };
+  } catch (e) {
+    return JSON.parse(JSON.stringify(DEFAULT_PRO_SETTINGS));
+  }
+}
+
+let proSettings = loadProSettings();
+
+function saveProSettings() {
+  try {
+    localStorage.setItem(PRO_SETTINGS_KEY, JSON.stringify(proSettings));
+  } catch (e) {
+    console.warn("Impossible d'enregistrer les réglages Pro", e);
+  }
+}
+
+// ---------- Utilitaires ----------
+function proKey(name) {
+  // "Figue d’amour" et "Figue d'amour" → même clé
+  return String(name || "").toLowerCase().replace(/[’`´]/g, "'").replace(/\s+/g, " ").trim();
+}
+
+function proEscape(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function fmt(n) {
+  return Math.round(Number(n) || 0).toLocaleString("fr-FR");
+}
+
+function toLocalDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function todayLocalStr() {
+  return toLocalDateStr(new Date());
+}
+
+function dateKeyOf(value) {
+  const d = new Date(value);
+  if (!isNaN(d.getTime())) return toLocalDateStr(d);
+  const s = String(value || "");
+  return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : "";
+}
+
+function fmtDateFr(s) {
+  const [y, m, d] = s.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+// jour ; semaine = lundi → dimanche ; mois ; année
+function getProRange(period, refStr) {
+  const [y, m, d] = refStr.split("-").map(Number);
+  const ref = new Date(y, m - 1, d);
+  let from, to;
+  if (period === "day") {
+    from = new Date(ref); to = new Date(ref);
+  } else if (period === "week") {
+    const dow = (ref.getDay() + 6) % 7;
+    from = new Date(ref); from.setDate(ref.getDate() - dow);
+    to = new Date(from); to.setDate(from.getDate() + 6);
+  } else if (period === "month") {
+    from = new Date(ref.getFullYear(), ref.getMonth(), 1);
+    to = new Date(ref.getFullYear(), ref.getMonth() + 1, 0);
+  } else {
+    from = new Date(ref.getFullYear(), 0, 1);
+    to = new Date(ref.getFullYear(), 11, 31);
+  }
+  return { from: toLocalDateStr(from), to: toLocalDateStr(to) };
+}
+
+function monthlyFixedTotal() {
+  return proSettings.fixedCharges.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+}
+
+// Charges fixes ramenées à la période (base : montant mensuel)
+function fixedForPeriod(period) {
+  const m = monthlyFixedTotal();
+  if (period === "day") return (m * 12) / 365;
+  if (period === "week") return (m * 12) / 52;
+  if (period === "month") return m;
+  return m * 12;
+}
+
+function getUnitCost(name) {
+  const v = proSettings.costs[proKey(name)];
+  return v === undefined || v === "" ? null : Number(v) || 0;
+}
+
+function getCatalogPrice(name) {
+  const p = (products || []).find((x) => proKey(x.name) === proKey(name));
+  return p ? Number(p.price) || 0 : 0;
+}
+
+// ---------- Calcul principal ----------
+function computePro(period, refStr) {
+  const { from, to } = getProRange(period, refStr);
+  const inRange = (v) => { const k = dateKeyOf(v); return k && k >= from && k <= to; };
+
+  let revenue = 0;
+  let cogs = 0;
+  let qtySold = 0;
+  let discounts = 0;
+  const byProduct = {};
+  const missingCost = new Set();
+
+  const addItem = (item) => {
+    const name = item.name || "Produit";
+    if (PRO_NON_PRODUCT_ITEMS.includes(proKey(name))) return;
+    const qty = Number(item.qty) || 0;
+    if (!qty) return;
+    const unitCost = getUnitCost(name);
+    if (unitCost === null) missingCost.add(name);
+    const cost = (unitCost || 0) * qty;
+    const unitPrice = Number(item.price) || getCatalogPrice(name);
+
+    cogs += cost;
+    qtySold += qty;
+    const k = proKey(name);
+    if (!byProduct[k]) byProduct[k] = { name, qty: 0, revenue: 0, cost: 0 };
+    byProduct[k].qty += qty;
+    byProduct[k].revenue += unitPrice * qty;
+    byProduct[k].cost += cost;
+  };
+
+  // 1) Ventes encaissées (y compris règlements de crédit)
+  (sales || []).forEach((s) => {
+    if (!inRange(s.date)) return;
+    revenue += Number(s.total) || 0;
+    discounts += Number(s.discountAmount) || 0;
+    (s.items || []).forEach(addItem);
+  });
+
+  // 2) Ventes à crédit : la marchandise est sortie le jour du crédit → son coût compte ce jour-là
+  //    (l'argent, lui, est compté quand le client paie, via « Règlement crédit »)
+  (credits || []).forEach((c) => {
+    if (!inRange(c.createdAt)) return;
+    let items = c.items;
+    if (typeof items === "string") { try { items = JSON.parse(items); } catch (e) { items = []; } }
+    (Array.isArray(items) ? items : []).forEach(addItem);
+  });
+
+  // 3) Frais de l'onglet Frais (optionnel)
+  const periodExpenses = (expenses || [])
+    .filter((e) => inRange(e.date))
+    .reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const deductedExpenses = proSettings.includeExpenses ? periodExpenses : 0;
+
+  const grossMargin = revenue - cogs;
+  const fixed = fixedForPeriod(period);
+  const totalCharges = fixed + deductedExpenses;
+  const net = grossMargin - totalCharges;
+
+  // Taux de marge : celui des ventes réelles, sinon celui du catalogue
+  let marginRate = revenue > 0 ? grossMargin / revenue : null;
+  if (marginRate === null) {
+    let tp = 0, tc = 0;
+    (products || []).forEach((p) => {
+      const c = getUnitCost(p.name);
+      if (Number(p.price) > 0 && c !== null) { tp += Number(p.price); tc += c; }
+    });
+    if (tp > 0) marginRate = (tp - tc) / tp;
+  }
+
+  // Seuil de rentabilité = charges ÷ taux de marge
+  const breakEven = marginRate && marginRate > 0 ? totalCharges / marginRate : null;
+  const avgUnitMargin = qtySold > 0 ? grossMargin / qtySold : null;
+  const unitsNeeded = avgUnitMargin && avgUnitMargin > 0 ? Math.ceil(totalCharges / avgUnitMargin) : null;
+
+  return {
+    from, to, revenue, cogs, grossMargin, fixed, periodExpenses, deductedExpenses,
+    totalCharges, net, marginRate, breakEven, unitsNeeded, byProduct, discounts,
+    missingCost: [...missingCost]
+  };
+}
+
+// ---------- Verrou ----------
+function isProUnlocked() {
+  return sessionStorage.getItem(PRO_UNLOCK_KEY) === "1";
+}
+
+function unlockPro(e) {
+  if (e) e.preventDefault();
+  const input = document.getElementById("pro-password");
+  const err = document.getElementById("pro-lock-error");
+  if (input.value === PRO_PASSWORD) {
+    sessionStorage.setItem(PRO_UNLOCK_KEY, "1");
+    input.value = "";
+    err.classList.add("hidden");
+    renderProView();
+  } else {
+    input.value = "";
+    err.classList.remove("hidden");
+    input.focus();
+  }
+}
+
+function lockPro() {
+  sessionStorage.removeItem(PRO_UNLOCK_KEY);
+  renderProView();
+}
+
+// ---------- Affichage ----------
+function refreshProIfVisible() {
+  const view = document.getElementById("view-pro");
+  if (view && !view.classList.contains("hidden") && isProUnlocked()) {
+    renderProNumbers();
+  }
+}
+
+function renderProView() {
+  const lock = document.getElementById("pro-lock");
+  const content = document.getElementById("pro-content");
+  if (!lock || !content) return;
+
+  if (!isProUnlocked()) {
+    lock.classList.remove("hidden");
+    content.classList.add("hidden");
+    setTimeout(() => document.getElementById("pro-password")?.focus(), 50);
+    return;
+  }
+
+  lock.classList.add("hidden");
+  content.classList.remove("hidden");
+  if (!proState.refDate) proState.refDate = todayLocalStr();
+  document.getElementById("pro-ref-date").value = proState.refDate;
+  document.getElementById("pro-include-expenses").checked = proSettings.includeExpenses;
+
+  renderProChargesList();
+  renderProCostsList();
+  renderProNumbers();
+}
+
+function setProPeriod(period) {
+  proState.period = period;
+  renderProNumbers();
+}
+
+function setProRefDate(value) {
+  if (!value) return;
+  proState.refDate = value;
+  document.getElementById("pro-ref-date").value = value;
+  renderProNumbers();
+}
+
+function toggleProExpenses(checked) {
+  proSettings.includeExpenses = checked;
+  saveProSettings();
+  renderProNumbers();
+}
+
+const PRO_PERIOD_LABELS = { day: "Aujourd'hui", week: "Cette semaine", month: "Ce mois", year: "Cette année" };
+
+function renderProNumbers() {
+  if (!proState.refDate) proState.refDate = todayLocalStr();
+
+  // ----- Résumé des 4 périodes (par rapport à aujourd'hui) -----
+  const summary = document.getElementById("pro-summary");
+  const today = todayLocalStr();
+  summary.innerHTML = ["day", "week", "month", "year"].map((p) => {
+    const r = computePro(p, today);
+    const cls = r.net >= 0 ? "pos" : "neg";
+    return `
+      <div class="pro-summary-item ${cls}">
+        <div class="label">${PRO_PERIOD_LABELS[p]}</div>
+        <div class="value text-${cls}">${r.net >= 0 ? "+" : "−"}${fmt(Math.abs(r.net))} FCFA</div>
+        <span class="badge ${cls}">${r.net >= 0 ? "Bénéfice" : "Perte"}</span>
+        <div class="detail">CA ${fmt(r.revenue)} • Charges ${fmt(r.totalCharges)}</div>
+      </div>`;
+  }).join("");
+
+  // ----- Boutons période -----
+  document.querySelectorAll(".pro-period-btn").forEach((b) =>
+    b.classList.toggle("active", b.dataset.period === proState.period)
+  );
+
+  // ----- Détail -----
+  const r = computePro(proState.period, proState.refDate);
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+  set("pro-range-label", r.from === r.to
+    ? `Période : ${fmtDateFr(r.from)}`
+    : `Période : du ${fmtDateFr(r.from)} au ${fmtDateFr(r.to)}`);
+  set("pro-revenue", fmt(r.revenue));
+  set("pro-cogs", fmt(r.cogs));
+  set("pro-margin", fmt(r.grossMargin));
+  set("pro-margin-rate", r.revenue > 0 ? `Taux de marge : ${Math.round((r.grossMargin / r.revenue) * 100)}%` : "");
+  set("pro-fixed", fmt(r.fixed));
+  set("pro-expenses", fmt(r.periodExpenses));
+  set("pro-expenses-note", proSettings.includeExpenses ? "Déduits du résultat" : "Non déduits (case décochée)");
+  set("pro-net", `${r.net >= 0 ? "+" : "−"}${fmt(Math.abs(r.net))} FCFA`);
+  set("pro-net-label", r.net >= 0 ? "✅ Bénéfice" : "❌ Perte");
+
+  const netCard = document.getElementById("pro-net-card");
+  netCard.classList.toggle("pos", r.net >= 0);
+  netCard.classList.toggle("neg", r.net < 0);
+
+  // ----- Barre d'équilibre -----
+  const fill = document.getElementById("breakeven-fill");
+  if (!r.breakEven) {
+    fill.style.width = "0%";
+    fill.classList.remove("reached");
+    set("breakeven-pct", "—");
+    set("breakeven-text", "Pas encore assez de données pour calculer le seuil (aucune vente et coûts incomplets).");
+  } else {
+    const pct = (r.revenue / r.breakEven) * 100;
+    fill.style.width = `${Math.min(pct, 150) / 1.5}%`; // 100% = trait noir aux 2/3
+    fill.classList.toggle("reached", pct >= 100);
+    set("breakeven-pct", `${Math.round(pct)}% du seuil`);
+
+    let msg = `Seuil de rentabilité : ${fmt(r.breakEven)} FCFA de chiffre d'affaires sur la période`;
+    if (r.unitsNeeded) msg += ` (≈ ${fmt(r.unitsNeeded)} articles vendus)`;
+    msg += ". ";
+    msg += pct >= 100
+      ? "✅ Équilibre atteint : chaque vente en plus est du bénéfice."
+      : `Il manque ${fmt(r.breakEven - r.revenue)} FCFA de ventes pour couvrir les charges.`;
+    set("breakeven-text", msg);
+  }
+
+  // ----- Tableau par produit -----
+  const tbody = document.getElementById("pro-products-body");
+  const rows = Object.values(r.byProduct).sort((a, b) => b.revenue - a.revenue);
+  tbody.innerHTML = rows.length
+    ? rows.map((p) => {
+        const m = p.revenue - p.cost;
+        return `<tr>
+          <td>${proEscape(p.name)}</td>
+          <td>${p.qty}</td>
+          <td>${fmt(p.revenue)}</td>
+          <td>${fmt(p.cost)}</td>
+          <td class="${m >= 0 ? "text-pos" : "text-neg"}">${fmt(m)}</td>
+        </tr>`;
+      }).join("") +
+      (r.discounts > 0
+        ? `<tr><td colspan="4" style="text-align:right;">Remises accordées sur la période</td><td class="text-neg">−${fmt(r.discounts)}</td></tr>`
+        : "")
+    : `<tr><td colspan="5">Aucune vente sur cette période.</td></tr>`;
+
+  set("pro-warning", r.missingCost.length
+    ? `⚠️ Coût de revient manquant pour : ${r.missingCost.join(", ")}. Ils sont comptés à 0 → le bénéfice est surestimé. Remplis-les plus bas.`
+    : "");
+
+  renderProChargesTotal();
+}
+
+// ---------- Charges fixes (éditables) ----------
+function renderProChargesList() {
+  const box = document.getElementById("pro-charges-list");
+  box.innerHTML = proSettings.fixedCharges.map((c, i) => `
+    <div class="pro-row">
+      <input type="text" value="${proEscape(c.name)}" oninput="updateProCharge(${i}, 'name', this.value)" />
+      <input type="number" min="0" step="1000" value="${Number(c.amount) || 0}" oninput="updateProCharge(${i}, 'amount', this.value)" />
+      <button class="del-btn" title="Supprimer" onclick="removeProCharge(${i})">✕</button>
+    </div>`).join("");
+  renderProChargesTotal();
+}
+
+function renderProChargesTotal() {
+  const el = document.getElementById("pro-charges-total");
+  if (!el) return;
+  const m = monthlyFixedTotal();
+  el.innerHTML = `Total : <strong>${fmt(m)} FCFA / mois</strong><br>
+    <span class="help-text">soit ${fmt((m * 12) / 52)} / semaine • ${fmt((m * 12) / 365)} / jour</span>`;
+}
+
+function updateProCharge(i, field, value) {
+  if (!proSettings.fixedCharges[i]) return;
+  proSettings.fixedCharges[i][field] = field === "amount" ? Number(value) || 0 : value;
+  saveProSettings();
+  renderProNumbers();
+}
+
+function addProCharge() {
+  proSettings.fixedCharges.push({ name: "Nouvelle charge", amount: 0 });
+  saveProSettings();
+  renderProChargesList();
+  renderProNumbers();
+}
+
+function removeProCharge(i) {
+  const c = proSettings.fixedCharges[i];
+  if (!c || !confirm(`Supprimer la charge « ${c.name} » ?`)) return;
+  proSettings.fixedCharges.splice(i, 1);
+  saveProSettings();
+  renderProChargesList();
+  renderProNumbers();
+}
+
+// ---------- Coûts de revient (éditables) ----------
+function renderProCostsList() {
+  const box = document.getElementById("pro-costs-list");
+  // tous les produits de la caisse + ceux trouvés dans les ventes
+  const names = new Map();
+  (products || []).forEach((p) => names.set(proKey(p.name), p.name));
+  (sales || []).forEach((s) => (s.items || []).forEach((it) => {
+    const k = proKey(it.name);
+    if (it.name && !PRO_NON_PRODUCT_ITEMS.includes(k) && !names.has(k)) names.set(k, it.name);
+  }));
+
+  box.innerHTML = [...names.entries()].map(([k, name]) => {
+    const cost = getUnitCost(name);
+    const price = getCatalogPrice(name);
+    return `
+      <div class="pro-cost-row">
+        <span>${proEscape(name)}${price ? ` <small class="help-text">(vendu ${fmt(price)})</small>` : ""}</span>
+        <input type="number" min="0" step="100" data-key="${proEscape(k)}"
+          class="${cost === null ? "missing" : ""}"
+          value="${cost === null ? "" : cost}" placeholder="à remplir"
+          oninput="updateProCost(this)" />
+      </div>`;
+  }).join("");
+}
+
+function updateProCost(input) {
+  const k = input.dataset.key;
+  if (input.value === "") {
+    proSettings.costs[k] = ""; // vide = à remplir (et ne revient pas à la valeur par défaut)
+    input.classList.add("missing");
+  } else {
+    proSettings.costs[k] = Number(input.value) || 0;
+    input.classList.remove("missing");
+  }
+  saveProSettings();
+  renderProNumbers();
 }
 
 // ================== INIT ==================
