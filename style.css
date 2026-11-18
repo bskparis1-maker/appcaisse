@@ -760,3 +760,372 @@ nav button.nav-pro {
   color: #b91c1c;
   cursor: pointer;
 }
+
+/* =====================================================================
+   V2 : CAISSE, COFFRE, PRODUITS, BAR À PARFUM, FRAIS, BILAN, MOBILE
+   ===================================================================== */
+
+/* ---------- Caisse / Coffre ---------- */
+.cash-box {
+  margin-top: 8px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #ecfdf5, #f0fdf4);
+  border: 1px solid #a7f3d0;
+}
+
+.cash-box.vault {
+  background: linear-gradient(135deg, #fff7ed, #fef3c7);
+  border-color: #fcd34d;
+}
+
+.cash-box-label {
+  font-size: 14px;
+  color: #374151;
+  font-weight: 600;
+}
+
+.cash-box-value {
+  font-size: 32px;
+  font-weight: 800;
+  margin: 4px 0;
+  letter-spacing: -0.01em;
+}
+
+.cash-box-value.negative { color: #b91c1c; }
+
+.cash-box-sub {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.cash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 6px;
+}
+
+.amount-in { color: #15803d; font-weight: 600; }
+.amount-out { color: #b91c1c; font-weight: 600; }
+
+.modal-content select {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  font-size: 14px;
+  margin-top: 3px;
+  background: #fff;
+}
+
+/* ---------- Produits ---------- */
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.task {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #fed7aa;
+  background: #fff7ed;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.task input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  accent-color: #10b981;
+  cursor: pointer;
+}
+
+.task.urgent { border-color: #fecaca; background: #fef2f2; }
+
+.task.done {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #6b7280;
+}
+
+.task.done .task-title { text-decoration: line-through; }
+
+.task-title { font-weight: 600; }
+.task-sub { font-size: 12px; color: #6b7280; }
+
+.task-empty {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  font-size: 14px;
+}
+
+.stock-low { color: #b91c1c; font-weight: 700; }
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.form-grid label {
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.form-grid input,
+.inline-form input,
+.inline-form select,
+.discount-box select {
+  padding: 6px 8px;
+  border-radius: 7px;
+  border: 1px solid #d1d5db;
+  font-size: 14px;
+  background: #fff;
+}
+
+.discount-box select { max-width: 260px; margin-top: 2px; }
+
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.inline-form input { flex: 1; min-width: 160px; }
+.inline-form .primary-btn { margin-top: 0; }
+
+.small-btn {
+  padding: 5px 10px !important;
+  font-size: 12px !important;
+  margin: 2px 0 !important;
+}
+
+table button.del-row {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+table button.del-row:hover { background: #fee2e2; }
+
+/* ---------- Bar à parfum ---------- */
+.perfume-alerts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.alert-box {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+}
+
+.alert-box h3 { margin-top: 0; font-size: 15px; }
+.alert-box.out { background: #fef2f2; border-color: #fecaca; }
+.alert-box.half { background: #fff7ed; border-color: #fed7aa; }
+
+.chip {
+  display: inline-block;
+  padding: 4px 10px;
+  margin: 3px 4px 3px 0;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  font-size: 13px;
+}
+
+/* ---------- Frais : camembert ---------- */
+.pie-wrap {
+  display: grid;
+  grid-template-columns: minmax(200px, 280px) 1fr;
+  gap: 16px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.pie-canvas { position: relative; height: 240px; }
+
+.pie-legend { font-size: 14px; }
+
+.pie-legend-row {
+  display: grid;
+  grid-template-columns: 14px 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px dashed #e5e7eb;
+}
+
+.pie-dot { width: 12px; height: 12px; border-radius: 4px; }
+.pie-pct { color: #6b7280; font-size: 12px; }
+
+.badge.neutral { background: #f3f4f6; color: #374151; }
+.badge.warn { background: #ffedd5; color: #c2410c; }
+
+/* ---------- Bilan ---------- */
+.health-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 18px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.health-card.good { background: #f0fdf4; border-color: #86efac; }
+.health-card.mid { background: #fff7ed; border-color: #fdba74; }
+.health-card.bad { background: #fef2f2; border-color: #fca5a5; }
+
+.health-score {
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.health-score small { font-size: 16px; color: #6b7280; font-weight: 600; }
+
+.health-verdict { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+
+.health-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.health-fill { height: 100%; width: 0; border-radius: 999px; transition: width 0.4s ease; }
+.good .health-fill { background: #22c55e; }
+.mid .health-fill { background: #f97316; }
+.bad .health-fill { background: #ef4444; }
+
+.bilan-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.bilan-list { margin: 0; padding-left: 18px; font-size: 14px; }
+.bilan-list li { margin-bottom: 6px; }
+
+.dashboard-summary .card .sub { font-size: 12px; color: #6b7280; margin-top: 2px; }
+
+.chart-box {
+  position: relative;
+  height: 260px;
+  padding: 8px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+}
+
+nav .nav-badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 5px;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+/* ---------- MOBILE : les tableaux deviennent des cartes ---------- */
+@media (max-width: 640px) {
+  nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    justify-content: flex-start;
+    padding-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  nav button { flex-shrink: 0; }
+
+  table.cards-mobile,
+  table.cards-mobile tbody,
+  table.cards-mobile tr,
+  table.cards-mobile td {
+    display: block;
+    width: 100%;
+  }
+
+  table.cards-mobile { border: none; }
+  table.cards-mobile thead { display: none; }
+
+  table.cards-mobile tr {
+    margin-bottom: 10px;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 6px 10px;
+    background: #ffffff;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+  }
+
+  table.cards-mobile td {
+    position: relative;
+    border: none;
+    border-bottom: 1px dashed #f3f4f6;
+    padding: 7px 0 7px 42%;
+    min-height: 32px;
+    text-align: right;
+    word-break: break-word;
+  }
+
+  table.cards-mobile td:last-child { border-bottom: none; }
+
+  table.cards-mobile td::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 0;
+    top: 8px;
+    width: 40%;
+    font-weight: 600;
+    color: #6b7280;
+    font-size: 12px;
+    text-align: left;
+  }
+
+  table.cards-mobile td input,
+  table.cards-mobile td select {
+    max-width: 100%;
+  }
+
+  table.cards-mobile td[colspan] { padding-left: 0; text-align: center; }
+  table.cards-mobile td[colspan]::before { display: none; }
+
+  /* lignes colorées du bar à parfum */
+  table.cards-mobile tr.perfume-full { background: #dcfce7; }
+  table.cards-mobile tr.perfume-half { background: #ffedd5; }
+  table.cards-mobile tr.perfume-out { background: #fee2e2; }
+  table.cards-mobile tr td { background: transparent !important; }
+
+  .cash-box-value { font-size: 26px; }
+  .cash-actions button { flex: 1 1 100%; }
+
+  .pie-wrap { grid-template-columns: 1fr; }
+  .health-card { grid-template-columns: 1fr; text-align: center; }
+  .health-score { font-size: 38px; }
+
+  .dashboard-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-summary .value { font-size: 15px; }
+}

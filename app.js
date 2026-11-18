@@ -101,6 +101,7 @@ let expenses = [];
 let credits = [];
 let creditPayments = [];
 let pendingCreditClient = null;
+let productsLoadedFromSheet = false; // ✅ vrai stock reçu de Google Sheets ?
 // ================== STOCK <-> SHEETS ==================
 function fetchStockFromSheet() {
   const callbackName = "onStockFromSheet_" + Date.now();
@@ -116,6 +117,7 @@ function fetchStockFromSheet() {
           stock: Number(p.stock)
         }));
         saveProducts(products);
+        productsLoadedFromSheet = true;
       }
     } finally {
       renderProductsForSale();
@@ -308,6 +310,7 @@ function fetchPerfumesFromSheet() {
       }
     } finally {
       renderPerfumeBar();
+      updateNavBadges();
       delete window[callbackName];
       script.remove();
     }
@@ -395,8 +398,14 @@ function showView(viewName) {
     renderProductsForSale();
     renderCart();
     renderClientSelect();
+    renderCaisseBox();
+  } else if (viewName === "coffre") {
+    renderCoffreView();
+  } else if (viewName === "bilan") {
+    renderBilanView();
   } else if (viewName === "produits") {
     renderProductsTable();
+    renderStockHistoryTable();
   } else if (viewName === "clients") {
     renderClientsTable();
   } else if (viewName === "ventes") {
@@ -407,6 +416,7 @@ function showView(viewName) {
     loadDashboardStats();
   } else if (viewName === "frais") {
     renderExpensesTable();
+    renderExpensesPie();
   } else if (viewName === "barparfum" || viewName === "bar-parfum") {
     renderPerfumeBar();
   } else if (viewName === "credit") {
@@ -587,6 +597,7 @@ function markCreditAsValidated(creditId) {
   renderCreditsUI();
   updateSalesViewForSelectedDate();
   loadDashboardStats?.();
+  refreshProIfVisible(); // ✅ met aussi à jour la caisse
 
   alert(c.status === "closed"
     ? "Crédit totalement réglé ✅ (paiement ajouté aux ventes du jour)"
@@ -1015,6 +1026,7 @@ function confirmSale() {
     credits.push(credit);
     sendCreditToSheet(credit);
     renderCreditsUI();
+    updateNavBadges();
 
     clearCart();
     renderProductsForSale();
@@ -1106,6 +1118,8 @@ function confirmSale() {
   renderProductsForSale();
   updateSalesViewForSelectedDate();
   loadDashboardStats?.();
+  refreshProIfVisible(); // ✅ met aussi à jour la caisse
+  updateNavBadges();
 
   alert("Vente enregistrée !");
 }
@@ -1270,19 +1284,28 @@ function renderProductsTable() {
 
   products.forEach((p) => {
     const tr = document.createElement("tr");
+    const isCouture = isServiceProduct(p);
+    const threshold = getReorderThreshold(p);
+    const low = !isCouture && (Number(p.stock) || 0) <= threshold;
+
     tr.innerHTML = `
-      <td>${p.name}</td>
-      <td>${p.price || 0} FCFA</td>
-      <td>${p.stock || 0}</td>
+      <td>${proEscape(p.name)}</td>
+      <td>${fmt(p.price)} FCFA</td>
+      <td class="${low ? "stock-low" : ""}">${isCouture ? "—" : fmt(p.stock)}${low ? " ⚠️" : ""}</td>
+      <td>${isCouture ? "—" : `<input type="number" min="0" value="${threshold}" onchange="setReorderThreshold(${p.id}, this.value)" />`}</td>
       <td>
-        <input type="number" id="stock-input-${p.id}" value="${p.stock || 0}" min="0" />
+        ${isCouture ? "—" : `<input type="number" id="stock-input-${p.id}" value="${p.stock || 0}" min="0" />`}
       </td>
       <td>
-        <button onclick="updateProductStock(${p.id})">Mettre à jour</button>
+        ${isCouture ? "" : `<button class="small-btn" onclick="updateProductStock(${p.id})">Mettre à jour</button>`}
+        <button class="small-btn del-row" onclick="deleteProduct(${p.id})">Supprimer</button>
       </td>
     `;
     tbody.appendChild(tr);
   });
+
+  renderStockValue();
+  renderReorderTasks();
 }
 
 function updateProductStock(productId) {
@@ -1318,6 +1341,8 @@ function updateProductStock(productId) {
   product.stock = newStock;
   saveProducts(products);
   renderProductsTable();
+  renderProductsForSale();
+  updateNavBadges();
   sendStockToSheetWithFallback(products);
 
   const change = {
@@ -1406,15 +1431,21 @@ function renderStockHistoryTable() {
 
   tbody.innerHTML = "";
 
+  const startInput = document.getElementById("stock-history-start");
+  const endInput = document.getElementById("stock-history-end");
+
+  // ✅ le tableau ne s'affiche que si une période est choisie
+  const hasPeriod = !!(startInput?.value || endInput?.value);
+  document.getElementById("stock-history-table")?.classList.toggle("hidden", !hasPeriod);
+  document.getElementById("stock-history-hint")?.classList.toggle("hidden", hasPeriod);
+  if (!hasPeriod) return;
+
   if (!Array.isArray(stockHistory) || stockHistory.length === 0) {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td colspan="6">Aucun mouvement de stock enregistré.</td>`;
     tbody.appendChild(tr);
     return;
   }
-
-  const startInput = document.getElementById("stock-history-start");
-  const endInput = document.getElementById("stock-history-end");
 
   let start = null;
   let end = null;
@@ -1456,6 +1487,14 @@ function renderStockHistoryTable() {
     `;
     tbody.appendChild(tr);
   });
+}
+
+function clearStockHistoryRange() {
+  const s = document.getElementById("stock-history-start");
+  const e = document.getElementById("stock-history-end");
+  if (s) s.value = "";
+  if (e) e.value = "";
+  renderStockHistoryTable();
 }
 
 function setStockHistoryRangeToday() {
@@ -1515,32 +1554,115 @@ function setStockHistoryRangeYear() {
 function addExpense() {
   const labelInput = document.getElementById("expense-label");
   const amountInput = document.getElementById("expense-amount");
+  const categorySelect = document.getElementById("expense-category");
+  const sourceSelect = document.getElementById("expense-source");
   if (!labelInput || !amountInput) return;
 
-  const label = (labelInput.value || "").trim();
+  const motif = (labelInput.value || "").trim();
   const amount = Number(amountInput.value) || 0;
+  const category = categorySelect ? categorySelect.value : "Autre";
+  const source = sourceSelect ? sourceSelect.value : "autre";
 
-  if (!label) return alert("Merci de renseigner le motif de la dépense.");
+  if (!motif) return alert("Merci de renseigner le motif de la dépense.");
   if (amount <= 0) return alert("Merci de renseigner un montant valide.");
 
-  const expense = {
-    id: Date.now(),
-    date: new Date().toISOString(),
-    label,
-    amount
-  };
+  // ✅ si payé avec la caisse, on vérifie qu'il y a assez d'espèces
+  if (source === "caisse") {
+    const available = computeCaisseBalance();
+    if (amount > available &&
+        !confirm(`La caisse affiche seulement ${fmt(available)} FCFA. Enregistrer quand même ?`)) {
+      return;
+    }
+  }
 
-  if (!Array.isArray(expenses)) expenses = [];
-  expenses.push(expense);
-
-  saveExpenses(expenses);
-  sendExpenseToSheet(expense);
+  const expense = createExpense({ category, motif, amount, source });
 
   labelInput.value = "";
   amountInput.value = "";
 
   renderExpensesTable();
+  renderExpensesPie();
+  renderCaisseBox();
   alert("Dépense enregistrée.");
+  return expense;
+}
+
+// Crée + enregistre une dépense (utilisé par l'onglet Frais ET par le coffre)
+// Le libellé est enregistré sous la forme « Catégorie : motif [caisse] » :
+// comme ça la catégorie et la source restent même après rechargement depuis Google Sheets.
+function createExpense({ category, motif, amount, source }) {
+  const tag = source === "caisse" ? " [caisse]" : source === "coffre" ? " [coffre]" : "";
+  const expense = {
+    id: Date.now(),
+    date: new Date().toISOString(),
+    label: `${category} : ${motif}${tag}`,
+    amount: Number(amount) || 0
+  };
+
+  if (!Array.isArray(expenses)) expenses = [];
+  expenses.push(expense);
+  saveExpenses(expenses);
+  sendExpenseToSheet(expense);
+  return expense;
+}
+
+// Lit un libellé de dépense → { category, motif, source }
+function parseExpense(e) {
+  let label = String(e?.label || "").trim();
+  let source = "autre";
+  const m = label.match(/\s*\[(caisse|coffre)\]\s*$/i);
+  if (m) {
+    source = m[1].toLowerCase();
+    label = label.slice(0, m.index).trim();
+  }
+  let category = "Autre";
+  let motif = label;
+  const idx = label.indexOf(" : ");
+  if (idx > 0) {
+    category = label.slice(0, idx).trim();
+    motif = label.slice(idx + 3).trim();
+  } else {
+    category = guessExpenseCategory(label);
+  }
+  return { category, motif, source };
+}
+
+// Pour les anciennes dépenses sans catégorie : on devine avec des mots-clés
+function guessExpenseCategory(label) {
+  const l = String(label || "").toLowerCase();
+  const rules = [
+    ["Loyer", ["loyer"]],
+    ["Salaires", ["salaire", "paie", "employ"]],
+    ["Marchandise / fournisseur", ["fournisseur", "marchandise", "achat", "stock", "commande"]],
+    ["Transport / livraison", ["transport", "taxi", "livraison", "carburant", "essence", "yango"]],
+    ["Électricité / eau / internet", ["senelec", "électricité", "electricite", "courant", "eau", "sen'eau", "internet", "wifi", "crédit tel", "credit tel"]],
+    ["Emballages", ["emballage", "sachet", "carton", "flacon"]],
+    ["Publicité", ["pub", "sponsor", "facebook", "instagram", "tiktok"]],
+    ["Nourriture", ["repas", "manger", "déjeuner", "dejeuner", "nourriture"]],
+    ["Entretien / réparation", ["entretien", "réparation", "reparation", "nettoyage"]]
+  ];
+  for (const [cat, words] of rules) {
+    if (words.some((w) => l.includes(w))) return cat;
+  }
+  return "Autre";
+}
+
+const EXPENSE_CATEGORIES = [
+  "Loyer",
+  "Salaires",
+  "Marchandise / fournisseur",
+  "Transport / livraison",
+  "Électricité / eau / internet",
+  "Emballages",
+  "Publicité",
+  "Nourriture",
+  "Entretien / réparation",
+  "Autre"
+];
+
+function fillExpenseCategorySelect(select) {
+  if (!select) return;
+  select.innerHTML = EXPENSE_CATEGORIES.map((c) => `<option value="${c}">${c}</option>`).join("");
 }
 
 function saveExpenses(list) {
@@ -1607,15 +1729,22 @@ function renderExpensesTable() {
 
   tbody.innerHTML = "";
 
+  const startInput = document.getElementById("expense-history-start");
+  const endInput = document.getElementById("expense-history-end");
+
+  // ✅ le tableau ne s'affiche que si une période est choisie
+  const hasPeriod = !!(startInput?.value || endInput?.value);
+  document.getElementById("expense-history-table")?.classList.toggle("hidden", !hasPeriod);
+  document.getElementById("expense-history-hint")?.classList.toggle("hidden", hasPeriod);
+  renderExpensesPie();
+  if (!hasPeriod) return;
+
   if (!Array.isArray(expenses) || expenses.length === 0) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="3">Aucune dépense enregistrée.</td>`;
+    tr.innerHTML = `<td colspan="5">Aucune dépense enregistrée.</td>`;
     tbody.appendChild(tr);
     return;
   }
-
-  const startInput = document.getElementById("expense-history-start");
-  const endInput = document.getElementById("expense-history-end");
 
   let start = null;
   let end = null;
@@ -1636,21 +1765,120 @@ function renderExpensesTable() {
 
   if (filtered.length === 0) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="3">Aucune dépense pour cette période.</td>`;
+    tr.innerHTML = `<td colspan="5">Aucune dépense pour cette période.</td>`;
     tbody.appendChild(tr);
     return;
   }
 
+  const SOURCE_LABELS = { caisse: "Caisse", coffre: "Coffre", autre: "Autre" };
+  let total = 0;
+
   filtered.forEach((e) => {
     const d = new Date(e.date);
     const dateStr = isNaN(d.getTime()) ? e.date : d.toLocaleString("fr-FR");
+    const info = parseExpense(e);
+    total += Number(e.amount) || 0;
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${dateStr}</td>
-      <td>${e.label}</td>
-      <td>${e.amount} FCFA</td>
+      <td>${proEscape(info.category)}</td>
+      <td>${proEscape(info.motif)}</td>
+      <td><span class="badge ${info.source === "coffre" ? "warn" : "neutral"}">${SOURCE_LABELS[info.source]}</span></td>
+      <td>${fmt(e.amount)} FCFA</td>
     `;
     tbody.appendChild(tr);
+  });
+
+  const trTotal = document.createElement("tr");
+  trTotal.innerHTML = `<td colspan="5" style="text-align:right;"><strong>Total : ${fmt(total)} FCFA</strong></td>`;
+  tbody.appendChild(trTotal);
+}
+
+function clearExpenseHistoryRange() {
+  const s = document.getElementById("expense-history-start");
+  const e = document.getElementById("expense-history-end");
+  if (s) s.value = "";
+  if (e) e.value = "";
+  renderExpensesTable();
+}
+
+// ✅ CAMEMBERT DES FRAIS (suit la période choisie, sinon : ce mois)
+let expensesPieChart = null;
+const PIE_COLORS = ["#ec4899", "#f97316", "#facc15", "#10b981", "#3b82f6", "#8b5cf6", "#14b8a6", "#ef4444", "#64748b", "#a3a3a3"];
+
+function renderExpensesPie() {
+  const canvas = document.getElementById("expenses-pie");
+  const legend = document.getElementById("expenses-pie-legend");
+  if (!canvas || !legend) return;
+
+  const startVal = document.getElementById("expense-history-start")?.value;
+  const endVal = document.getElementById("expense-history-end")?.value;
+  let from, to, label;
+  if (startVal || endVal) {
+    from = startVal || "0000-01-01";
+    to = endVal || "9999-12-31";
+    label = startVal && endVal
+      ? (startVal === endVal ? `le ${fmtDateFr(startVal)}` : `du ${fmtDateFr(startVal)} au ${fmtDateFr(endVal)}`)
+      : "période choisie";
+  } else {
+    const r = getProRange("month", todayLocalStr());
+    from = r.from; to = r.to; label = "ce mois";
+  }
+
+  const byCat = {};
+  let total = 0;
+  (expenses || []).forEach((e) => {
+    const k = dateKeyOf(e.date);
+    if (!k || k < from || k > to) return;
+    const cat = parseExpense(e).category;
+    const amount = Number(e.amount) || 0;
+    byCat[cat] = (byCat[cat] || 0) + amount;
+    total += amount;
+  });
+
+  const entries = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+
+  if (expensesPieChart) { expensesPieChart.destroy(); expensesPieChart = null; }
+
+  if (!entries.length) {
+    legend.innerHTML = `<p class="help-text">Aucune dépense ${label}.</p>`;
+    return;
+  }
+
+  legend.innerHTML =
+    `<div class="help-text" style="margin-bottom:6px;">Répartition ${label} — total <strong>${fmt(total)} FCFA</strong></div>` +
+    entries.map(([cat, amount], i) => `
+      <div class="pie-legend-row">
+        <span class="pie-dot" style="background:${PIE_COLORS[i % PIE_COLORS.length]}"></span>
+        <span>${i === 0 ? "🥇 " : ""}${proEscape(cat)}</span>
+        <strong>${fmt(amount)}</strong>
+        <span class="pie-pct">${Math.round((amount / total) * 100)}%</span>
+      </div>`).join("");
+
+  if (typeof Chart === "undefined") return;
+  expensesPieChart = new Chart(canvas, {
+    type: "pie",
+    data: {
+      labels: entries.map((e) => e[0]),
+      datasets: [{
+        data: entries.map((e) => e[1]),
+        backgroundColor: entries.map((_, i) => PIE_COLORS[i % PIE_COLORS.length]),
+        borderColor: "#ffffff",
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ` ${ctx.label} : ${fmt(ctx.raw)} FCFA (${Math.round((ctx.raw / total) * 100)}%)`
+          }
+        }
+      }
+    }
   });
 }
 
@@ -2138,6 +2366,24 @@ function renderPerfumeBar() {
   if (!tbody) return;
   tbody.innerHTML = "";
 
+  // ✅ listes rupture / bientôt vide
+  const outList = perfumes.filter((p) => p.level === "out");
+  const halfList = perfumes.filter((p) => p.level === "half");
+  const setHtml = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  setHtml("perfume-out-count", outList.length);
+  setHtml("perfume-half-count", halfList.length);
+  setHtml("perfume-out-list", outList.length
+    ? outList.map((p) => `<span class="chip">${proEscape(p.name)}</span>`).join("")
+    : `<span class="help-text">Aucune rupture 👍</span>`);
+  setHtml("perfume-half-list", halfList.length
+    ? halfList.map((p) => `<span class="chip">${proEscape(p.name)}</span>`).join("")
+    : `<span class="help-text">Rien à signaler</span>`);
+
+  if (perfumes.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="3">Aucune référence. Ajoute-en une ci-dessus.</td></tr>`;
+    return;
+  }
+
   perfumes.forEach((p, index) => {
     const tr = document.createElement("tr");
     const cfg = PERFUME_LEVELS[p.level] || PERFUME_LEVELS.full;
@@ -2151,11 +2397,14 @@ function renderPerfumeBar() {
       .join("");
 
     tr.innerHTML = `
-      <td>${p.name}</td>
+      <td>${proEscape(p.name)}</td>
       <td>
         <select onchange="changePerfumeLevel(${index}, this.value)">
           ${optionsHtml}
         </select>
+      </td>
+      <td>
+        <button class="small-btn del-row" onclick="deletePerfume(${index})">Supprimer</button>
       </td>
     `;
     tbody.appendChild(tr);
@@ -2165,6 +2414,31 @@ function renderPerfumeBar() {
 function changePerfumeLevel(index, newLevel) {
   if (!perfumes[index]) return;
   perfumes[index].level = newLevel;
+  renderPerfumeBar();
+  sendPerfumesToSheet();
+}
+
+// ✅ ajouter une référence
+function addPerfume() {
+  const nameInput = document.getElementById("new-perfume-name");
+  const levelSelect = document.getElementById("new-perfume-level");
+  const name = (nameInput?.value || "").trim();
+  if (!name) return alert("Indique le nom de la référence.");
+  if (perfumes.some((p) => proKey(p.name) === proKey(name))) {
+    return alert("Cette référence existe déjà.");
+  }
+  perfumes.push({ name, level: levelSelect?.value || "full" });
+  perfumes.sort((a, b) => a.name.localeCompare(b.name, "fr"));
+  nameInput.value = "";
+  renderPerfumeBar();
+  sendPerfumesToSheet();
+}
+
+// ✅ supprimer une référence
+function deletePerfume(index) {
+  const p = perfumes[index];
+  if (!p || !confirm(`Supprimer la référence « ${p.name} » ?`)) return;
+  perfumes.splice(index, 1);
   renderPerfumeBar();
   sendPerfumesToSheet();
 }
@@ -2311,7 +2585,7 @@ function openDailyReportForDate(dateStr) {
       expensesRowsHtml += `
         <tr>
           <td>${timeStr}</td>
-          <td>${exp.label || ""}</td>
+          <td>${(() => { const i = parseExpense(exp); return proEscape(i.category + " : " + i.motif); })()}</td>
           <td style="text-align:right;">${amount} FCFA</td>
         </tr>
       `;
@@ -2682,14 +2956,23 @@ function unlockPro(e) {
 function lockPro() {
   sessionStorage.removeItem(PRO_UNLOCK_KEY);
   renderProView();
+  renderBilanView();
 }
 
 // ---------- Affichage ----------
+// Appelée après chaque chargement depuis Google Sheets / chaque vente :
+// met à jour tout ce qui est affiché (caisse, coffre, pro, bilan, badges…)
 function refreshProIfVisible() {
-  const view = document.getElementById("view-pro");
-  if (view && !view.classList.contains("hidden") && isProUnlocked()) {
-    renderProNumbers();
-  }
+  const isVisible = (id) => {
+    const v = document.getElementById(id);
+    return v && !v.classList.contains("hidden");
+  };
+  if (isVisible("view-pro") && isProUnlocked()) renderProNumbers();
+  if (isVisible("view-bilan") && isProUnlocked()) renderBilanNumbers();
+  if (isVisible("view-coffre")) renderCoffreView();
+  if (isVisible("view-produits")) { renderStockValue(); renderReorderTasks(); }
+  renderCaisseBox();
+  updateNavBadges();
 }
 
 function renderProView() {
@@ -2825,6 +3108,7 @@ function renderProNumbers() {
     : "");
 
   renderProChargesTotal();
+  renderProStockValue();
 }
 
 // ---------- Charges fixes (éditables) ----------
@@ -2908,8 +3192,913 @@ function updateProCost(input) {
   renderProNumbers();
 }
 
+// =====================================================================
+// ================== CAISSE & COFFRE ==================
+// =====================================================================
+// Caisse (espèces) = montant au dernier comptage
+//                  + ventes payées en espèces depuis
+//                  − dépôts dans le coffre depuis
+//                  − dépenses payées avec la caisse depuis
+// Coffre = dépôts − décaissements ± ajustements
+// ⚠️ Enregistré dans ce navigateur (pas encore dans Google Sheets).
+const VAULT_KEY = "bsk_vault";
+
+function loadVault() {
+  try {
+    const v = JSON.parse(localStorage.getItem(VAULT_KEY) || "null");
+    if (v && Array.isArray(v.moves)) return v;
+  } catch (e) {}
+  return { caisseBaseline: null, moves: [] };
+}
+
+let vault = loadVault();
+
+function saveVault() {
+  try {
+    localStorage.setItem(VAULT_KEY, JSON.stringify(vault));
+  } catch (e) {
+    alert("Impossible d'enregistrer le coffre dans ce navigateur.");
+  }
+}
+
+// Au tout premier lancement : la caisse démarre à 0 au début de la journée
+function ensureCaisseBaseline() {
+  if (vault.caisseBaseline && vault.caisseBaseline.at) return;
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  vault.caisseBaseline = { amount: 0, at: d.toISOString() };
+  saveVault();
+}
+
+function isCashPayment(method) {
+  const m = String(method || "cash").toLowerCase().trim();
+  return ["cash", "espèces", "especes", "espece", "espèce", "liquide"].includes(m);
+}
+
+function computeCaisseBalance() {
+  ensureCaisseBaseline();
+  const t0 = new Date(vault.caisseBaseline.at).getTime();
+  let total = Number(vault.caisseBaseline.amount) || 0;
+
+  (sales || []).forEach((s) => {
+    const t = new Date(s.date).getTime();
+    if (isNaN(t) || t <= t0) return;
+    if (isCashPayment(s.paymentMethod)) total += Number(s.total) || 0;
+  });
+
+  vault.moves.forEach((m) => {
+    if (m.type !== "deposit") return;
+    if (new Date(m.at).getTime() > t0) total -= Number(m.amount) || 0;
+  });
+
+  (expenses || []).forEach((e) => {
+    const t = new Date(e.date).getTime();
+    if (isNaN(t) || t <= t0) return;
+    if (parseExpense(e).source === "caisse") total -= Number(e.amount) || 0;
+  });
+
+  return total;
+}
+
+function computeCoffreBalance() {
+  return vault.moves.reduce((sum, m) => {
+    if (m.type === "deposit") return sum + (Number(m.amount) || 0);
+    if (m.type === "withdraw") return sum - (Number(m.amount) || 0);
+    if (m.type === "adjust") return sum + (Number(m.delta) || 0);
+    return sum;
+  }, 0);
+}
+
+function renderCaisseBox() {
+  const el = document.getElementById("caisse-balance");
+  if (!el) return;
+  const bal = computeCaisseBalance();
+  el.textContent = fmt(bal);
+  el.parentElement.classList.toggle("negative", bal < 0);
+  const sub = document.getElementById("caisse-balance-sub");
+  if (sub) {
+    const at = new Date(vault.caisseBaseline.at);
+    sub.textContent = `Ventes en espèces depuis le dernier comptage (${at.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}), moins les dépôts au coffre et les frais payés avec la caisse.`;
+  }
+}
+
+// ---------- Fenêtre « montant » réutilisable ----------
+let moneyModalHandler = null;
+
+function openMoneyModal(cfg) {
+  const $ = (id) => document.getElementById(id);
+  $("mm-title").textContent = cfg.title;
+  $("mm-info").innerHTML = cfg.info || "";
+  $("mm-amount-label").textContent = cfg.amountLabel || "Montant (FCFA)";
+  $("mm-amount").value = cfg.defaultAmount ?? "";
+  $("mm-category-wrap").classList.toggle("hidden", !cfg.showCategory);
+  $("mm-motif-wrap").classList.toggle("hidden", cfg.hideMotif === true);
+  $("mm-motif-label").textContent = cfg.motifLabel || "Motif";
+  $("mm-motif").placeholder = cfg.motifPlaceholder || "";
+  $("mm-motif").value = "";
+  $("mm-error").classList.add("hidden");
+  $("mm-confirm").textContent = cfg.confirmLabel || "Valider";
+  moneyModalHandler = cfg.onConfirm;
+  $("money-modal").classList.remove("hidden");
+  setTimeout(() => $("mm-amount").focus(), 50);
+}
+
+function closeMoneyModal() {
+  document.getElementById("money-modal").classList.add("hidden");
+  moneyModalHandler = null;
+}
+
+function submitMoneyModal() {
+  if (!moneyModalHandler) return;
+  const amountRaw = document.getElementById("mm-amount").value;
+  const amount = Number(amountRaw);
+  const motif = (document.getElementById("mm-motif").value || "").trim();
+  const category = document.getElementById("mm-category").value;
+  const errorMsg = moneyModalHandler({ amount, amountRaw, motif, category });
+  if (errorMsg) {
+    const err = document.getElementById("mm-error");
+    err.textContent = errorMsg;
+    err.classList.remove("hidden");
+    return;
+  }
+  closeMoneyModal();
+}
+
+// ---------- Actions ----------
+function openDepositModal() {
+  const caisse = computeCaisseBalance();
+  openMoneyModal({
+    title: "🔐 Dépôt dans le coffre",
+    info: `Disponible dans la caisse : <strong>${fmt(caisse)} FCFA</strong>`,
+    amountLabel: "Montant à déposer (FCFA)",
+    defaultAmount: caisse > 0 ? caisse : "",
+    motifLabel: "Note (optionnel)",
+    motifPlaceholder: "Ex : dépôt de fin de journée",
+    confirmLabel: "Déposer",
+    onConfirm: ({ amount, motif }) => {
+      if (!(amount > 0)) return "Indique un montant valide.";
+      if (amount > caisse) return `La caisse ne contient que ${fmt(caisse)} FCFA.`;
+      vault.moves.push({ id: Date.now(), at: new Date().toISOString(), type: "deposit", amount, motif: motif || "Dépôt depuis la caisse" });
+      saveVault();
+      refreshProIfVisible();
+      alert(`✅ ${fmt(amount)} FCFA déposés dans le coffre.`);
+      return null;
+    }
+  });
+}
+
+function openWithdrawModal() {
+  const coffre = computeCoffreBalance();
+  openMoneyModal({
+    title: "Décaisser du coffre",
+    info: `Disponible dans le coffre : <strong>${fmt(coffre)} FCFA</strong><br>Ce décaissement sera ajouté automatiquement aux <strong>Frais</strong>.`,
+    amountLabel: "Montant à sortir (FCFA)",
+    showCategory: true,
+    motifLabel: "Motif (obligatoire)",
+    motifPlaceholder: "Ex : paiement fournisseur, loyer de novembre…",
+    confirmLabel: "Décaisser",
+    onConfirm: ({ amount, motif, category }) => {
+      if (!(amount > 0)) return "Indique un montant valide.";
+      if (amount > coffre) return `Le coffre ne contient que ${fmt(coffre)} FCFA.`;
+      if (motif.length < 3) return "Le motif est obligatoire pour tout décaissement.";
+      const expense = createExpense({ category, motif, amount, source: "coffre" });
+      vault.moves.push({ id: Date.now(), at: expense.date, type: "withdraw", amount, motif, category, expenseId: expense.id });
+      saveVault();
+      renderExpensesTable();
+      refreshProIfVisible();
+      alert(`✅ ${fmt(amount)} FCFA sortis du coffre et ajoutés aux frais.`);
+      return null;
+    }
+  });
+}
+
+function openCoffreAdjustModal() {
+  const coffre = computeCoffreBalance();
+  openMoneyModal({
+    title: "Ajuster le solde du coffre",
+    info: `Le coffre affiche <strong>${fmt(coffre)} FCFA</strong>. Indique le montant réellement compté (ex : solde de départ).<br><small>Un ajustement n'est pas compté comme une dépense.</small>`,
+    amountLabel: "Montant réel dans le coffre (FCFA)",
+    defaultAmount: coffre,
+    motifLabel: "Motif (obligatoire)",
+    motifPlaceholder: "Ex : solde de départ, comptage du coffre",
+    onConfirm: ({ amount, amountRaw, motif }) => {
+      if (amountRaw === "" || !(amount >= 0)) return "Indique un montant valide.";
+      if (motif.length < 3) return "Le motif est obligatoire.";
+      const delta = amount - coffre;
+      if (delta === 0) return "Le montant est identique au solde actuel.";
+      vault.moves.push({ id: Date.now(), at: new Date().toISOString(), type: "adjust", delta, motif });
+      saveVault();
+      refreshProIfVisible();
+      return null;
+    }
+  });
+}
+
+function openCaisseCountModal() {
+  const caisse = computeCaisseBalance();
+  openMoneyModal({
+    title: "Compter / ajuster la caisse",
+    info: `La caisse affiche <strong>${fmt(caisse)} FCFA</strong>. Compte les billets et pièces et indique le montant réel : le calcul repartira de ce montant.`,
+    amountLabel: "Montant compté dans la caisse (FCFA)",
+    defaultAmount: caisse,
+    motifLabel: "Note (optionnel)",
+    motifPlaceholder: "Ex : comptage du matin",
+    onConfirm: ({ amount, amountRaw, motif }) => {
+      if (amountRaw === "" || !(amount >= 0)) return "Indique un montant valide.";
+      const now = new Date().toISOString();
+      vault.moves.push({ id: Date.now(), at: now, type: "caisse-count", amount, previous: caisse, motif });
+      vault.caisseBaseline = { amount, at: now };
+      saveVault();
+      refreshProIfVisible();
+      const diff = amount - caisse;
+      if (diff !== 0) alert(`Caisse ajustée. Écart constaté : ${diff > 0 ? "+" : "−"}${fmt(Math.abs(diff))} FCFA.`);
+      return null;
+    }
+  });
+}
+
+function renderCoffreView() {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const coffre = computeCoffreBalance();
+  const caisse = computeCaisseBalance();
+  set("coffre-balance", fmt(coffre));
+  set("coffre-caisse", fmt(caisse));
+  set("coffre-total", fmt(coffre + caisse));
+
+  const { from, to } = getProRange("month", todayLocalStr());
+  let mIn = 0, mOut = 0;
+  vault.moves.forEach((m) => {
+    const k = dateKeyOf(m.at);
+    if (k < from || k > to) return;
+    if (m.type === "deposit") mIn += Number(m.amount) || 0;
+    if (m.type === "withdraw") mOut += Number(m.amount) || 0;
+  });
+  set("coffre-month-in", fmt(mIn));
+  set("coffre-month-out", fmt(mOut));
+
+  // Historique avec solde après chaque opération
+  const tbody = document.getElementById("coffre-history-body");
+  if (!tbody) return;
+  const coffreMoves = vault.moves
+    .filter((m) => ["deposit", "withdraw", "adjust"].includes(m.type))
+    .sort((a, b) => new Date(a.at) - new Date(b.at));
+
+  let running = 0;
+  const rows = coffreMoves.map((m) => {
+    let label, amount;
+    if (m.type === "deposit") { label = "⬇️ Dépôt depuis la caisse"; amount = Number(m.amount); }
+    else if (m.type === "withdraw") { label = `⬆️ Décaissement (${proEscape(m.category || "Autre")})`; amount = -Number(m.amount); }
+    else { label = "⚖️ Ajustement"; amount = Number(m.delta); }
+    running += amount;
+    return `<tr>
+      <td>${new Date(m.at).toLocaleString("fr-FR")}</td>
+      <td>${label}</td>
+      <td class="${amount >= 0 ? "amount-in" : "amount-out"}">${amount >= 0 ? "+" : "−"}${fmt(Math.abs(amount))} FCFA</td>
+      <td>${proEscape(m.motif || "")}</td>
+      <td>${fmt(running)} FCFA</td>
+    </tr>`;
+  }).reverse();
+
+  tbody.innerHTML = rows.length
+    ? rows.slice(0, 200).join("")
+    : `<tr><td colspan="5">Aucune opération. Commence par « Ajuster le solde » si le coffre contient déjà de l'argent.</td></tr>`;
+}
+
+// =====================================================================
+// ================== STOCK : valeur, seuils, commandes ==================
+// =====================================================================
+const STOCK_SETTINGS_KEY = "bsk_stock_settings";
+
+function loadStockSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STOCK_SETTINGS_KEY) || "null");
+    if (s) return { thresholds: s.thresholds || {}, ordered: s.ordered || {} };
+  } catch (e) {}
+  return { thresholds: {}, ordered: {} };
+}
+
+let stockSettings = loadStockSettings();
+
+function saveStockSettings() {
+  try { localStorage.setItem(STOCK_SETTINGS_KEY, JSON.stringify(stockSettings)); } catch (e) {}
+}
+
+function isServiceProduct(p) {
+  return proKey(p.name) === "couture" || (Number(p.stock) || 0) >= 999999;
+}
+
+// Seuils demandés : bar à parfum 100, bar à musc 50, bar à thiouraye 50, le reste 20
+function defaultThreshold(name) {
+  const k = proKey(name);
+  if (k === "bar à parfum") return 100;
+  if (k === "bar à musc") return 50;
+  if (k === "bar à thiouraye") return 50;
+  return 20;
+}
+
+function getReorderThreshold(p) {
+  const v = stockSettings.thresholds[proKey(p.name)];
+  return v === undefined ? defaultThreshold(p.name) : Number(v) || 0;
+}
+
+function setReorderThreshold(productId, value) {
+  const p = products.find((x) => x.id === productId);
+  if (!p) return;
+  stockSettings.thresholds[proKey(p.name)] = Math.max(0, Number(value) || 0);
+  saveStockSettings();
+  renderProductsTable();
+  updateNavBadges();
+}
+
+// Produits sous le seuil (et nettoyage des tâches dont le stock est remonté)
+function getReorderItems() {
+  const items = [];
+  let changed = false;
+  (products || []).forEach((p) => {
+    if (isServiceProduct(p)) return;
+    const k = proKey(p.name);
+    const threshold = getReorderThreshold(p);
+    const stock = Number(p.stock) || 0;
+    if (stock <= threshold) {
+      items.push({ product: p, key: k, stock, threshold, ordered: stockSettings.ordered[k] || null });
+    } else if (stockSettings.ordered[k] && productsLoadedFromSheet) {
+      // stock remonté → tâche terminée (seulement avec le vrai stock de Google Sheets)
+      delete stockSettings.ordered[k];
+      changed = true;
+    }
+  });
+  if (changed) saveStockSettings();
+  // ruptures d'abord, puis le plus bas par rapport au seuil
+  // (ordre fixe : une tâche cochée ne bouge pas, pour ne pas perdre le fil)
+  return items.sort((a, b) =>
+    a.stock / (a.threshold || 1) - b.stock / (b.threshold || 1) || a.product.name.localeCompare(b.product.name, "fr"));
+}
+
+function renderReorderTasks() {
+  const box = document.getElementById("reorder-list");
+  if (!box) return;
+  const items = getReorderItems();
+
+  if (!items.length) {
+    box.innerHTML = `<div class="task-empty">✅ Aucun produit à commander pour le moment.</div>`;
+    return;
+  }
+
+  box.innerHTML = items.map((it) => {
+    const done = !!it.ordered;
+    const urgent = it.stock === 0 && !done;
+    const sub = done
+      ? `Commande passée le ${new Date(it.ordered.at).toLocaleDateString("fr-FR")} • reste ${fmt(it.stock)}`
+      : `${it.stock === 0 ? "🔴 RUPTURE" : `Reste ${fmt(it.stock)} pièce${it.stock > 1 ? "s" : ""}`} • seuil ${fmt(it.threshold)}`;
+    return `
+      <label class="task ${done ? "done" : ""} ${urgent ? "urgent" : ""}">
+        <input type="checkbox" ${done ? "checked" : ""} data-key="${proEscape(it.key)}" onchange="toggleReorder(this)" />
+        <span>
+          <span class="task-title">Commander ${proEscape(it.product.name)}</span><br>
+          <span class="task-sub">${sub}</span>
+        </span>
+      </label>`;
+  }).join("");
+}
+
+function toggleReorder(checkbox) {
+  const k = checkbox.dataset.key;
+  if (checkbox.checked) stockSettings.ordered[k] = { at: new Date().toISOString() };
+  else delete stockSettings.ordered[k];
+  saveStockSettings();
+  renderReorderTasks();
+  renderStockValue();
+  updateNavBadges();
+}
+
+function computeStockValue() {
+  let sale = 0, cost = 0, units = 0, missingCost = 0;
+  (products || []).forEach((p) => {
+    if (isServiceProduct(p)) return;
+    const stock = Number(p.stock) || 0;
+    units += stock;
+    sale += (Number(p.price) || 0) * stock;
+    const c = getUnitCost(p.name);
+    if (c === null) { if (stock > 0) missingCost++; } else cost += c * stock;
+  });
+  return { sale, cost, units, missingCost };
+}
+
+function renderStockValue() {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const v = computeStockValue();
+  set("stock-units", fmt(v.units));
+  set("stock-to-order", getReorderItems().filter((i) => !i.ordered).length);
+}
+
+// ✅ Valeur du stock : affichée seulement dans l'onglet Pro
+function renderProStockValue() {
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  const v = computeStockValue();
+  set("stock-value-sale", fmt(v.sale));
+  set("stock-value-cost", fmt(v.cost) + (v.missingCost ? " *" : ""));
+  set("stock-value-margin", fmt(v.sale - v.cost));
+  set("pro-stock-units", fmt(v.units));
+
+  const tbody = document.getElementById("pro-stock-body");
+  if (!tbody) return;
+  const rows = (products || [])
+    .filter((p) => !isServiceProduct(p))
+    .map((p) => {
+      const stock = Number(p.stock) || 0;
+      const c = getUnitCost(p.name);
+      return { name: p.name, stock, sale: (Number(p.price) || 0) * stock, cost: c === null ? null : c * stock };
+    })
+    .sort((a, b) => b.sale - a.sale);
+
+  tbody.innerHTML = rows.map((r) => `
+    <tr>
+      <td>${proEscape(r.name)}</td>
+      <td>${fmt(r.stock)}</td>
+      <td>${fmt(r.sale)} FCFA</td>
+      <td>${r.cost === null ? `<span class="text-neg">coût à remplir</span>` : fmt(r.cost) + " FCFA"}</td>
+    </tr>`).join("") +
+    `<tr><td colspan="4" style="text-align:right;"><strong>Total : ${fmt(v.sale)} FCFA (vente) • ${fmt(v.cost)} FCFA (coût)</strong></td></tr>`;
+}
+
+// ---------- Créer / supprimer un produit ----------
+function createProduct() {
+  const $ = (id) => document.getElementById(id);
+  const name = ($("new-product-name").value || "").trim();
+  const price = Number($("new-product-price").value);
+  const stock = Number($("new-product-stock").value) || 0;
+  const costRaw = $("new-product-cost").value;
+  const thresholdRaw = $("new-product-threshold").value;
+
+  if (!name) return alert("Indique le nom du produit.");
+  if (!(price >= 0) || $("new-product-price").value === "") return alert("Indique le prix de vente.");
+  if (stock < 0) return alert("Stock invalide.");
+  if (products.some((p) => proKey(p.name) === proKey(name))) return alert("Un produit porte déjà ce nom.");
+
+  const id = products.reduce((max, p) => Math.max(max, Number(p.id) || 0), 0) + 1;
+  const product = { id, name, price, stock };
+  products.push(product);
+
+  if (costRaw !== "") { proSettings.costs[proKey(name)] = Number(costRaw) || 0; saveProSettings(); }
+  if (thresholdRaw !== "") { stockSettings.thresholds[proKey(name)] = Number(thresholdRaw) || 0; saveStockSettings(); }
+
+  saveProducts(products);
+  sendStockToSheetWithFallback(products);
+  logStockChangeToSheet({
+    date: new Date().toISOString(), productId: id, productName: name,
+    oldStock: 0, newStock: stock, delta: stock, reason: "Création du produit"
+  });
+
+  ["new-product-name", "new-product-price", "new-product-stock", "new-product-cost", "new-product-threshold"]
+    .forEach((i) => ($(i).value = ""));
+
+  renderProductsTable();
+  renderProductsForSale();
+  updateNavBadges();
+  alert(`✅ Produit « ${name} » créé.`);
+}
+
+function deleteProduct(productId) {
+  const p = products.find((x) => x.id === productId);
+  if (!p) return;
+  if (!confirm(`Supprimer définitivement le produit « ${p.name} » ?\n(Les anciennes ventes restent dans l'historique.)`)) return;
+
+  products = products.filter((x) => x.id !== productId);
+  cart = cart.filter((item) => item.productId !== productId);
+  delete stockSettings.ordered[proKey(p.name)];
+  saveStockSettings();
+
+  saveProducts(products);
+  sendStockToSheetWithFallback(products);
+  logStockChangeToSheet({
+    date: new Date().toISOString(), productId, productName: p.name,
+    oldStock: p.stock, newStock: 0, delta: -(Number(p.stock) || 0), reason: "Produit supprimé"
+  });
+
+  renderProductsTable();
+  renderProductsForSale();
+  renderCart();
+  updateNavBadges();
+}
+
+// ---------- Petits compteurs rouges dans le menu ----------
+function updateNavBadges() {
+  const setBadge = (view, count) => {
+    const btn = document.querySelector(`nav button[onclick="showView('${view}')"]`);
+    if (!btn) return;
+    if (!btn.dataset.label) btn.dataset.label = btn.textContent.trim();
+    btn.innerHTML = proEscape(btn.dataset.label) + (count > 0 ? ` <span class="nav-badge">${count}</span>` : "");
+  };
+  setBadge("produits", getReorderItems().filter((i) => !i.ordered).length);
+  setBadge("bar-parfum", (perfumes || []).filter((p) => p.level === "out").length);
+}
+
+// =====================================================================
+// ================== BILAN (santé de la boutique) ==================
+// =====================================================================
+const bilanState = { period: "month", refDate: null };
+let bilanChart = null;
+
+function unlockBilan(e) {
+  if (e) e.preventDefault();
+  const input = document.getElementById("bilan-password");
+  const err = document.getElementById("bilan-lock-error");
+  if (input.value === PRO_PASSWORD) {
+    sessionStorage.setItem(PRO_UNLOCK_KEY, "1");
+    input.value = "";
+    err.classList.add("hidden");
+    renderBilanView();
+  } else {
+    input.value = "";
+    err.classList.remove("hidden");
+    input.focus();
+  }
+}
+
+function renderBilanView() {
+  const lock = document.getElementById("bilan-lock");
+  const content = document.getElementById("bilan-content");
+  if (!lock || !content) return;
+  if (!isProUnlocked()) {
+    lock.classList.remove("hidden");
+    content.classList.add("hidden");
+    return;
+  }
+  lock.classList.add("hidden");
+  content.classList.remove("hidden");
+  if (!bilanState.refDate) bilanState.refDate = todayLocalStr();
+  document.getElementById("bilan-ref-date").value = bilanState.refDate;
+  renderBilanNumbers();
+}
+
+function setBilanPeriod(p) { bilanState.period = p; renderBilanNumbers(); }
+function setBilanRefDate(v) {
+  if (!v) return;
+  bilanState.refDate = v;
+  document.getElementById("bilan-ref-date").value = v;
+  renderBilanNumbers();
+}
+
+// date de référence de la période précédente
+function previousRef(period, refStr) {
+  const [y, m, d] = refStr.split("-").map(Number);
+  let r;
+  if (period === "day") r = new Date(y, m - 1, d - 1);
+  else if (period === "week") r = new Date(y, m - 1, d - 7);
+  else if (period === "month") r = new Date(y, m - 2, 1);
+  else r = new Date(y - 1, 0, 1);
+  return toLocalDateStr(r);
+}
+
+const PERIOD_NAMES = { day: "la veille", week: "la semaine précédente", month: "le mois précédent", year: "l'année précédente" };
+
+function computeBilan(period, refStr) {
+  const { from, to } = getProRange(period, refStr);
+  const inRange = (v, f = from, t = to) => { const k = dateKeyOf(v); return k && k >= f && k <= t; };
+
+  // Ventes
+  const periodSales = (sales || []).filter((s) => inRange(s.date));
+  const ca = periodSales.reduce((s, x) => s + (Number(x.total) || 0), 0);
+  const count = periodSales.length;
+  const discounts = periodSales.reduce((s, x) => s + (Number(x.discountAmount) || 0), 0);
+  const pay = { cash: 0, orange: 0, wave: 0 };
+  periodSales.forEach((s) => {
+    const a = Number(s.total) || 0;
+    if (s.paymentMethod === "orange") pay.orange += a;
+    else if (s.paymentMethod === "wave") pay.wave += a;
+    else pay.cash += a;
+  });
+
+  const prev = getProRange(period, previousRef(period, refStr));
+  const caPrev = (sales || []).filter((s) => inRange(s.date, prev.from, prev.to))
+    .reduce((s, x) => s + (Number(x.total) || 0), 0);
+  const evolution = caPrev > 0 ? ((ca - caPrev) / caPrev) * 100 : null;
+
+  // Rentabilité (même calcul que l'onglet Pro)
+  const pro = computePro(period, refStr);
+
+  // Dépenses
+  const periodExpenses = (expenses || []).filter((e) => inRange(e.date));
+  const expTotal = periodExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const expByCat = {};
+  periodExpenses.forEach((e) => {
+    const c = parseExpense(e).category;
+    expByCat[c] = (expByCat[c] || 0) + (Number(e.amount) || 0);
+  });
+  const topExp = Object.entries(expByCat).sort((a, b) => b[1] - a[1]);
+
+  // Trésorerie
+  const caisse = computeCaisseBalance();
+  const coffre = computeCoffreBalance();
+  const tresorerie = caisse + coffre;
+  const monthly = monthlyFixedTotal();
+  const coverage = monthly > 0 ? tresorerie / monthly : null;
+
+  // Crédits
+  const openCredits = (credits || []).filter((c) => (c.status || "open") !== "closed");
+  const creditOutstanding = openCredits.reduce((s, c) => s + (Number(c.amountDue) || 0), 0);
+
+  // Stock
+  const stockVal = computeStockValue();
+  const reorder = getReorderItems();
+  const toOrder = reorder.filter((i) => !i.ordered);
+  const ruptures = (products || []).filter((p) => !isServiceProduct(p) && (Number(p.stock) || 0) === 0);
+  const perfumeOut = (perfumes || []).filter((p) => p.level === "out");
+
+  // Clients
+  const buyers = new Set();
+  periodSales.forEach((s) => {
+    if (s.clientId) buyers.add("id:" + s.clientId);
+    else if (s.clientPhone || s.clientName) buyers.add("np:" + (s.clientPhone || "") + (s.clientName || ""));
+  });
+  const birthdays = (clients || []).filter((c) => isClientBirthdaySoon(c)).length;
+
+  // Contient aujourd'hui ? (période en cours)
+  const today = todayLocalStr();
+  const inProgress = today >= from && today <= to && today < to;
+
+  return {
+    from, to, ca, count, discounts, pay, caPrev, evolution, pro, expTotal, topExp,
+    caisse, coffre, tresorerie, coverage, monthly, openCredits, creditOutstanding,
+    stockVal, toOrder, reorder, ruptures, perfumeOut, buyers: buyers.size, birthdays, inProgress, periodSales
+  };
+}
+
+function computeHealthScore(b) {
+  let score = 0;
+  const pro = b.pro;
+
+  // 1) Résultat net (30 pts)
+  if (pro.net >= 0 && pro.revenue > 0) score += 30;
+  else if (pro.breakEven) score += Math.round(20 * Math.min(1, pro.revenue / pro.breakEven));
+
+  // 2) Évolution du CA (15 pts)
+  if (b.evolution === null) score += b.ca > 0 ? 10 : 0;
+  else if (b.evolution >= 0) score += 15;
+  else if (b.evolution >= -10) score += 10;
+  else if (b.evolution >= -25) score += 5;
+
+  // 3) Trésorerie : combien de mois de charges couverts (15 pts)
+  if (b.coverage === null) score += 15;
+  else if (b.coverage >= 1) score += 15;
+  else if (b.coverage >= 0.5) score += 10;
+  else if (b.coverage > 0) score += 5;
+
+  // 4) Taux de marge (10 pts)
+  const rate = pro.revenue > 0 ? pro.grossMargin / pro.revenue : pro.marginRate || 0;
+  score += rate >= 0.5 ? 10 : rate >= 0.35 ? 6 : 2;
+
+  // 5) Remises (10 pts)
+  const discRate = b.ca + b.discounts > 0 ? b.discounts / (b.ca + b.discounts) : 0;
+  score += discRate <= 0.05 ? 10 : discRate <= 0.1 ? 6 : discRate <= 0.2 ? 3 : 0;
+
+  // 6) Crédits non payés vs CA mensuel (10 pts)
+  const monthCa = computeBilanMonthCa();
+  const credRate = monthCa > 0 ? b.creditOutstanding / monthCa : b.creditOutstanding > 0 ? 1 : 0;
+  score += credRate <= 0.05 ? 10 : credRate <= 0.15 ? 6 : credRate <= 0.3 ? 3 : 0;
+
+  // 7) Stock : commandes à passer / ruptures (10 pts)
+  const issues = b.toOrder.length + b.ruptures.length + b.perfumeOut.length;
+  score += issues === 0 ? 10 : issues <= 3 ? 6 : issues <= 6 ? 3 : 0;
+
+  return Math.max(0, Math.min(100, score));
+}
+
+function computeBilanMonthCa() {
+  const { from, to } = getProRange("month", todayLocalStr());
+  return (sales || []).filter((s) => { const k = dateKeyOf(s.date); return k && k >= from && k <= to; })
+    .reduce((s, x) => s + (Number(x.total) || 0), 0);
+}
+
+function bilanCard(label, value, sub = "", cls = "") {
+  return `<div class="card ${cls}"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ""}</div>`;
+}
+
+function renderBilanNumbers() {
+  if (!bilanState.refDate) bilanState.refDate = todayLocalStr();
+  document.querySelectorAll(".bilan-period-btn").forEach((btn) =>
+    btn.classList.toggle("active", btn.dataset.period === bilanState.period));
+
+  const b = computeBilan(bilanState.period, bilanState.refDate);
+  const pro = b.pro;
+  const $ = (id) => document.getElementById(id);
+
+  $("bilan-range-label").textContent = (b.from === b.to
+    ? `Période : ${fmtDateFr(b.from)}`
+    : `Période : du ${fmtDateFr(b.from)} au ${fmtDateFr(b.to)}`) + (b.inProgress ? " (en cours)" : "");
+
+  // ----- Score -----
+  const score = computeHealthScore(b);
+  const level = score >= 70 ? "good" : score >= 45 ? "mid" : "bad";
+  $("bilan-health").className = `health-card ${level}`;
+  $("bilan-score").textContent = score;
+  $("bilan-score-fill").style.width = score + "%";
+  $("bilan-verdict").textContent = level === "good" ? "🟢 La boutique se porte bien"
+    : level === "mid" ? "🟠 Santé correcte, à surveiller" : "🔴 Situation fragile";
+  $("bilan-verdict-text").textContent = b.inProgress
+    ? "Période en cours : les charges fixes de toute la période sont déjà comptées, le résultat va s'améliorer avec les prochaines ventes."
+    : "Score calculé sur le résultat, l'évolution des ventes, la trésorerie, la marge, les remises, les crédits et le stock.";
+
+  // ----- Points forts / attention -----
+  const good = [], bad = [];
+  const pct = (x) => `${x > 0 ? "+" : ""}${Math.round(x)}%`;
+
+  if (pro.revenue > 0 && pro.net >= 0) good.push(`Période en <strong>bénéfice : +${fmt(pro.net)} FCFA</strong>.`);
+  else if (pro.revenue > 0 || pro.totalCharges > 0) {
+    bad.push(`Période en <strong>perte : −${fmt(Math.abs(pro.net))} FCFA</strong>.` +
+      (pro.breakEven ? ` Il faut ${fmt(Math.max(0, pro.breakEven - pro.revenue))} FCFA de ventes en plus pour être à l'équilibre.` : ""));
+  }
+
+  if (b.evolution !== null) {
+    if (b.evolution >= 5) good.push(`Les ventes progressent de <strong>${pct(b.evolution)}</strong> par rapport à ${PERIOD_NAMES[bilanState.period]}.`);
+    else if (b.evolution <= -5) bad.push(`Les ventes baissent de <strong>${pct(b.evolution)}</strong> par rapport à ${PERIOD_NAMES[bilanState.period]}${b.inProgress ? " (période pas encore terminée)" : ""}.`);
+  }
+
+  const rate = pro.revenue > 0 ? pro.grossMargin / pro.revenue : null;
+  if (rate !== null) {
+    if (rate >= 0.5) good.push(`Bonne marge sur les produits : <strong>${Math.round(rate * 100)}%</strong>.`);
+    else if (rate < 0.35) bad.push(`Marge faible : <strong>${Math.round(rate * 100)}%</strong>. Vérifie tes prix et tes remises.`);
+  }
+
+  const discRate = b.ca + b.discounts > 0 ? b.discounts / (b.ca + b.discounts) : 0;
+  if (discRate > 0.1) bad.push(`Les remises représentent <strong>${Math.round(discRate * 100)}%</strong> des ventes (${fmt(b.discounts)} FCFA).`);
+
+  if (b.coverage !== null) {
+    if (b.coverage >= 1) good.push(`Trésorerie solide : caisse + coffre couvrent <strong>${b.coverage.toFixed(1)} mois</strong> de charges.`);
+    else bad.push(`Caisse + coffre (${fmt(b.tresorerie)} FCFA) couvrent seulement <strong>${Math.round(b.coverage * 100)}%</strong> d'un mois de charges.`);
+  }
+
+  if (b.creditOutstanding > 0) bad.push(`<strong>${fmt(b.creditOutstanding)} FCFA</strong> de crédits à encaisser (${b.openCredits.length} client${b.openCredits.length > 1 ? "s" : ""}). Pense à relancer.`);
+  else good.push("Aucun crédit client en attente.");
+
+  if (b.toOrder.length) bad.push(`<strong>${b.toOrder.length}</strong> commande${b.toOrder.length > 1 ? "s" : ""} de stock à passer (${b.toOrder.slice(0, 4).map((i) => proEscape(i.product.name)).join(", ")}${b.toOrder.length > 4 ? "…" : ""}).`);
+  if (b.ruptures.length) bad.push(`Produits en rupture : ${b.ruptures.map((p) => proEscape(p.name)).join(", ")}.`);
+  if (b.perfumeOut.length) bad.push(`Bar à parfum : ${b.perfumeOut.length} référence${b.perfumeOut.length > 1 ? "s" : ""} en rupture.`);
+  if (!b.toOrder.length && !b.ruptures.length && !b.perfumeOut.length) good.push("Stock et bar à parfum bien approvisionnés.");
+
+  if (b.topExp.length && b.expTotal > 0 && b.topExp[0][1] / b.expTotal > 0.4) {
+    bad.push(`La catégorie <strong>${proEscape(b.topExp[0][0])}</strong> pèse ${Math.round((b.topExp[0][1] / b.expTotal) * 100)}% des frais.`);
+  }
+
+  const top = Object.values(pro.byProduct).sort((x, y) => y.revenue - x.revenue)[0];
+  if (top) good.push(`Produit vedette : <strong>${proEscape(top.name)}</strong> (${top.qty} vendus).`);
+  if (b.birthdays) good.push(`${b.birthdays} anniversaire${b.birthdays > 1 ? "s" : ""} client dans les 72h : une occasion de vendre (onglet Clients).`);
+  if (pro.missingCost.length) bad.push(`Coût de revient manquant pour : ${pro.missingCost.map(proEscape).join(", ")} (onglet Pro).`);
+
+  $("bilan-good").innerHTML = good.length ? good.map((x) => `<li>${x}</li>`).join("") : "<li>—</li>";
+  $("bilan-bad").innerHTML = bad.length ? bad.map((x) => `<li>${x}</li>`).join("") : "<li>Rien à signaler 👍</li>";
+
+  // ----- Cartes -----
+  const evoTxt = b.evolution === null ? "Pas de comparaison possible"
+    : `<span class="${b.evolution >= 0 ? "text-pos" : "text-neg"}">${pct(b.evolution)}</span> vs ${PERIOD_NAMES[bilanState.period]}`;
+
+  $("bilan-sales").innerHTML =
+    bilanCard("Chiffre d'affaires", fmt(b.ca) + " FCFA", evoTxt) +
+    bilanCard("Nombre de ventes", fmt(b.count)) +
+    bilanCard("Panier moyen", fmt(b.count ? b.ca / b.count : 0) + " FCFA") +
+    bilanCard("Remises accordées", fmt(b.discounts) + " FCFA", b.ca ? `${Math.round(discRate * 100)}% des ventes` : "") +
+    bilanCard("Espèces", fmt(b.pay.cash) + " FCFA") +
+    bilanCard("Orange Money", fmt(b.pay.orange) + " FCFA") +
+    bilanCard("Wave", fmt(b.pay.wave) + " FCFA");
+
+  const netCls = pro.net >= 0 ? "pro-net pos" : "pro-net neg";
+  $("bilan-profit").innerHTML =
+    bilanCard("Marge brute", fmt(pro.grossMargin) + " FCFA", rate !== null ? `Taux de marge ${Math.round(rate * 100)}%` : "") +
+    bilanCard("Coût des produits vendus", fmt(pro.cogs) + " FCFA") +
+    bilanCard("Charges fixes (période)", fmt(pro.fixed) + " FCFA") +
+    bilanCard("Résultat net", `${pro.net >= 0 ? "+" : "−"}${fmt(Math.abs(pro.net))} FCFA`, pro.net >= 0 ? "✅ Bénéfice" : "❌ Perte", netCls) +
+    bilanCard("Seuil de rentabilité", pro.breakEven ? fmt(pro.breakEven) + " FCFA" : "—",
+      pro.breakEven ? `${Math.round((pro.revenue / pro.breakEven) * 100)}% atteint` : "");
+
+  $("bilan-cash").innerHTML =
+    bilanCard("Caisse (espèces)", fmt(b.caisse) + " FCFA") +
+    bilanCard("Coffre", fmt(b.coffre) + " FCFA") +
+    bilanCard("Trésorerie totale", fmt(b.tresorerie) + " FCFA",
+      b.coverage !== null ? `≈ ${b.coverage.toFixed(1)} mois de charges` : "") +
+    bilanCard("Crédits à encaisser", fmt(b.creditOutstanding) + " FCFA", `${b.openCredits.length} crédit(s) ouvert(s)`);
+
+  $("bilan-stock").innerHTML =
+    bilanCard("Valeur du stock (vente)", fmt(b.stockVal.sale) + " FCFA") +
+    bilanCard("Valeur du stock (coût)", fmt(b.stockVal.cost) + " FCFA", `${fmt(b.stockVal.units)} articles`) +
+    bilanCard("Commandes à passer", fmt(b.toOrder.length), `${b.reorder.length - b.toOrder.length} déjà commandée(s)`) +
+    bilanCard("Produits en rupture", fmt(b.ruptures.length)) +
+    bilanCard("Parfums en rupture", fmt(b.perfumeOut.length));
+
+  $("bilan-other").innerHTML =
+    bilanCard("Frais enregistrés", fmt(b.expTotal) + " FCFA",
+      b.topExp.length ? `1ʳᵉ dépense : ${proEscape(b.topExp[0][0])}` : "") +
+    bilanCard("Clients identifiés", fmt(b.buyers), "ayant acheté sur la période") +
+    bilanCard("Anniversaires (72h)", fmt(b.birthdays));
+
+  // ----- Top produits -----
+  const topRows = Object.values(pro.byProduct).sort((x, y) => y.revenue - x.revenue).slice(0, 8);
+  $("bilan-top-body").innerHTML = topRows.length
+    ? topRows.map((p) => `<tr><td>${proEscape(p.name)}</td><td>${p.qty}</td><td>${fmt(p.revenue)}</td>
+        <td class="${p.revenue - p.cost >= 0 ? "text-pos" : "text-neg"}">${fmt(p.revenue - p.cost)}</td></tr>`).join("")
+    : `<tr><td colspan="4">Aucune vente sur cette période.</td></tr>`;
+
+  renderBilanChart(b);
+}
+
+function renderBilanChart(b) {
+  const canvas = document.getElementById("bilan-chart");
+  if (!canvas || typeof Chart === "undefined") return;
+
+  const buckets = [];
+  const period = bilanState.period;
+  if (period === "year") {
+    const y = Number(b.from.slice(0, 4));
+    for (let m = 0; m < 12; m++) buckets.push({ key: `${y}-${String(m + 1).padStart(2, "0")}`, label: new Date(y, m, 1).toLocaleDateString("fr-FR", { month: "short" }), ca: 0, exp: 0 });
+  } else if (period === "day") {
+    for (let h = 0; h < 24; h++) buckets.push({ key: h, label: `${h}h`, ca: 0, exp: 0 });
+  } else {
+    const [y, m, d] = b.from.split("-").map(Number);
+    const start = new Date(y, m - 1, d);
+    for (let cur = new Date(start); toLocalDateStr(cur) <= b.to; cur.setDate(cur.getDate() + 1)) {
+      buckets.push({ key: toLocalDateStr(cur), label: cur.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }), ca: 0, exp: 0 });
+    }
+  }
+
+  const bucketOf = (dateVal) => {
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return null;
+    if (period === "year") return toLocalDateStr(d).slice(0, 7);
+    if (period === "day") return d.getHours();
+    return toLocalDateStr(d);
+  };
+  const map = new Map(buckets.map((x) => [x.key, x]));
+  b.periodSales.forEach((s) => { const k = map.get(bucketOf(s.date)); if (k) k.ca += Number(s.total) || 0; });
+  (expenses || []).forEach((e) => {
+    const key = dateKeyOf(e.date);
+    if (!key || key < b.from || key > b.to) return;
+    const k = map.get(bucketOf(e.date));
+    if (k) k.exp += Number(e.amount) || 0;
+  });
+
+  if (bilanChart) bilanChart.destroy();
+  bilanChart = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: buckets.map((x) => x.label),
+      datasets: [
+        { label: "Ventes (FCFA)", data: buckets.map((x) => x.ca), backgroundColor: "#10b981", borderRadius: 4 },
+        { label: "Frais (FCFA)", data: buckets.map((x) => x.exp), backgroundColor: "#f97316", borderRadius: 4 }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: { callbacks: { label: (c) => ` ${c.dataset.label} : ${fmt(c.raw)}` } }
+      },
+      scales: { y: { beginAtZero: true, ticks: { callback: (v) => fmt(v) } } }
+    }
+  });
+}
+
+// =====================================================================
+// ================== TABLEAUX EN CARTES SUR MOBILE ==================
+// =====================================================================
+// Sur téléphone, chaque ligne de tableau devient une carte et chaque
+// cellule affiche le nom de sa colonne (ex : « Téléphone : 77… »).
+function labelTableCells(table) {
+  const headers = [...table.querySelectorAll("thead th")].map((th) => th.textContent.trim());
+  if (!headers.length) return;
+  table.classList.add("cards-mobile");
+  table.querySelectorAll("tbody tr").forEach((tr) => {
+    let col = 0;
+    [...tr.children].forEach((td) => {
+      if (!td.hasAttribute("colspan")) td.setAttribute("data-label", headers[col] || "");
+      col += Number(td.getAttribute("colspan")) || 1;
+    });
+  });
+}
+
+function setupResponsiveTables() {
+  const container = document.querySelector(".app-container");
+  if (!container) return;
+  const run = () => container.querySelectorAll("table").forEach(labelTableCells);
+  run();
+  let timer = null;
+  new MutationObserver(() => {
+    clearTimeout(timer);
+    timer = setTimeout(run, 30);
+  }).observe(container, { childList: true, subtree: true });
+}
+
 // ================== INIT ==================
 document.addEventListener("DOMContentLoaded", () => {
+  // ✅ V2
+  fillExpenseCategorySelect(document.getElementById("expense-category"));
+  fillExpenseCategorySelect(document.getElementById("mm-category"));
+  document.getElementById("mm-confirm")?.addEventListener("click", submitMoneyModal);
+  document.getElementById("mm-amount")?.addEventListener("keydown", (e) => { if (e.key === "Enter") submitMoneyModal(); });
+  ensureCaisseBaseline();
+  setupResponsiveTables();
+  renderExpensesTable();
+  renderStockHistoryTable();
+
   showView("caisse");
 
   fetchStockFromSheet();
