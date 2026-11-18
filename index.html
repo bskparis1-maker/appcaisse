@@ -444,7 +444,7 @@
       <div class="cash-box vault">
         <div class="cash-box-label">🔐 Disponible dans le coffre</div>
         <div class="cash-box-value"><span id="coffre-balance">0</span> FCFA</div>
-        <div class="cash-box-sub">Mis à jour à chaque dépôt ou décaissement</div>
+        <div class="cash-box-sub">Mis à jour à chaque dépôt ou décaissement<br><span id="coffre-sync-status"></span></div>
       </div>
       <div class="cash-actions">
         <button class="danger-btn" onclick="openWithdrawModal()">Décaisser du coffre</button>
@@ -471,6 +471,32 @@
           </tr>
         </thead>
         <tbody id="coffre-history-body"></tbody>
+      </table>
+
+      <!-- ✅ CONTRÔLE DES ÉCARTS -->
+      <h3>🔎 Contrôle des écarts</h3>
+      <p class="help-text">
+        À chaque comptage (bouton « Compter / ajuster la caisse » dans l'onglet Caisse, ou « Ajuster le solde » ici),
+        l'app compare ce qu'il <strong>devait</strong> y avoir avec ce qui a été <strong>compté</strong>.
+        Un écart négatif = de l'argent manque.
+      </p>
+      <div class="dashboard-summary">
+        <div class="card"><div class="label">Écarts caisse (ce mois)</div><div class="value" id="ecart-caisse-month">0 FCFA</div></div>
+        <div class="card"><div class="label">Écarts coffre (ce mois)</div><div class="value" id="ecart-coffre-month">0 FCFA</div></div>
+        <div class="card"><div class="label">Comptages ce mois</div><div class="value" id="ecart-count-month">0</div></div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Date / Heure</th>
+            <th>Où</th>
+            <th>Devait y avoir</th>
+            <th>Compté</th>
+            <th>Écart</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody id="ecarts-body"></tbody>
       </table>
       </div>
     </section>

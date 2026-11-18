@@ -3248,34 +3248,144 @@ function cancelDeletePassword() {
 //                  − dépôts dans le coffre depuis
 //                  − dépenses payées avec la caisse depuis
 // Coffre = dépôts − décaissements ± ajustements
-// ⚠️ Enregistré dans ce navigateur (pas encore dans Google Sheets).
+//
+// ✅ SAUVEGARDE : chaque mouvement est
+//   1) gardé dans ce navigateur (copie de secours, marche sans internet)
+//   2) envoyé dans l'onglet « Coffre » de Google Sheets (sauvegarde durable,
+//      la même sur tous les appareils). Au démarrage, l'app recharge ce journal.
 const VAULT_KEY = "bsk_vault";
 
 function loadVault() {
+  let v = null;
   try {
-    const v = JSON.parse(localStorage.getItem(VAULT_KEY) || "null");
-    if (v && Array.isArray(v.moves)) return v;
+    v = JSON.parse(localStorage.getItem(VAULT_KEY) || "null");
   } catch (e) {}
-  return { caisseBaseline: null, moves: [] };
+  if (!v || !Array.isArray(v.moves)) v = { moves: [] };
+
+  // Ancienne version : le comptage de caisse était à part → on le transforme en mouvement
+  if (v.caisseBaseline && v.caisseBaseline.at &&
+      !v.moves.some((m) => m.type === "caisse-count")) {
+    v.moves.push({
+      id: "base-" + new Date(v.caisseBaseline.at).getTime(),
+      at: v.caisseBaseline.at,
+      type: "caisse-count",
+      amount: Number(v.caisseBaseline.amount) || 0,
+      previous: Number(v.caisseBaseline.amount) || 0,
+      motif: "Reprise de l'ancien comptage"
+    });
+  }
+  delete v.caisseBaseline;
+  return v;
 }
 
 let vault = loadVault();
+let vaultSheetStatus = "loading"; // loading | ok | missing (script Google pas installé) | offline
 
 function saveVault() {
   try {
     localStorage.setItem(VAULT_KEY, JSON.stringify(vault));
   } catch (e) {
-    alert("Impossible d'enregistrer le coffre dans ce navigateur.");
+    console.warn("Impossible d'enregistrer le coffre dans ce navigateur.", e);
   }
 }
 
-// Au tout premier lancement : la caisse démarre à 0 au début de la journée
-function ensureCaisseBaseline() {
-  if (vault.caisseBaseline && vault.caisseBaseline.at) return;
+// Ajoute un mouvement : navigateur + Google Sheets
+function addVaultMove(move) {
+  move.id = String(move.id || Date.now() + "-" + Math.random().toString(36).slice(2, 6));
+  vault.moves.push(move);
+  saveVault();
+  sendVaultMoveToSheet(move);
+  return move;
+}
+
+function sendVaultMoveToSheet(move) {
+  const payload = encodeURIComponent(JSON.stringify({ move }));
+  fetch(`${SHEET_URL}?action=addVaultMove&payload=${payload}`, { mode: "no-cors" })
+    .catch((err) => console.warn("Envoi mouvement coffre impossible (sera renvoyé plus tard) :", err));
+}
+
+// Recharge le journal depuis Google Sheets et renvoie ce qui manquerait
+function syncVaultFromSheet() {
+  return new Promise((resolve) => {
+    const cb = "onVault_" + Date.now();
+    const script = document.createElement("script");
+    let done = false;
+
+    const finish = (status) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      delete window[cb];
+      script.remove();
+      vaultSheetStatus = status;
+      ensureCaisseBaseline();
+      refreshProIfVisible();
+      resolve(status);
+    };
+
+    const timer = setTimeout(() => finish("missing"), 10000);
+
+    window[cb] = function (data) {
+      if (!data || data.vault !== true || !Array.isArray(data.moves)) {
+        // le script Google ne connaît pas encore « getVaultMoves »
+        finish("missing");
+        return;
+      }
+      const sheetIds = new Set(data.moves.map((m) => String(m.id)));
+      const merged = new Map();
+      data.moves.forEach((m) => merged.set(String(m.id), normalizeVaultMove(m)));
+      // mouvements faits sur cet appareil mais pas encore dans Sheets → on les renvoie
+      vault.moves.forEach((m) => {
+        if (!sheetIds.has(String(m.id))) {
+          merged.set(String(m.id), m);
+          sendVaultMoveToSheet(m);
+        }
+      });
+      vault.moves = [...merged.values()].sort((a, b) => new Date(a.at) - new Date(b.at));
+      saveVault();
+      finish("ok");
+    };
+
+    script.onerror = () => finish("offline");
+    script.src = `${SHEET_URL}?action=getVaultMoves&callback=${cb}`;
+    document.body.appendChild(script);
+  });
+}
+
+function normalizeVaultMove(m) {
+  return {
+    id: String(m.id),
+    at: m.at,
+    type: m.type,
+    amount: Number(m.amount) || 0,
+    delta: Number(m.delta) || 0,
+    previous: Number(m.previous) || 0,
+    motif: m.motif || "",
+    category: m.category || "",
+    expenseId: m.expenseId || ""
+  };
+}
+
+// Dernier comptage de caisse = point de départ du calcul
+function getCaisseBaseline() {
+  const counts = vault.moves
+    .filter((m) => m.type === "caisse-count")
+    .sort((a, b) => new Date(b.at) - new Date(a.at));
+  if (counts.length) return { amount: Number(counts[0].amount) || 0, at: counts[0].at };
+  // pas encore de comptage : on compte à partir du début de la journée
   const d = new Date();
   d.setHours(0, 0, 0, 0);
-  vault.caisseBaseline = { amount: 0, at: d.toISOString() };
-  saveVault();
+  return { amount: 0, at: d.toISOString(), temporary: true };
+}
+
+// Au tout premier lancement (et seulement après avoir vérifié Google Sheets),
+// on enregistre un point de départ à 0 au début de la journée.
+function ensureCaisseBaseline() {
+  if (vault.moves.some((m) => m.type === "caisse-count")) return;
+  if (vaultSheetStatus === "loading") return;
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  addVaultMove({ at: d.toISOString(), type: "caisse-count", amount: 0, previous: 0, motif: "Démarrage du suivi de caisse" });
 }
 
 function isCashPayment(method) {
@@ -3284,9 +3394,9 @@ function isCashPayment(method) {
 }
 
 function computeCaisseBalance() {
-  ensureCaisseBaseline();
-  const t0 = new Date(vault.caisseBaseline.at).getTime();
-  let total = Number(vault.caisseBaseline.amount) || 0;
+  const baseline = getCaisseBaseline();
+  const t0 = new Date(baseline.at).getTime();
+  let total = Number(baseline.amount) || 0;
 
   (sales || []).forEach((s) => {
     const t = new Date(s.date).getTime();
@@ -3325,9 +3435,16 @@ function renderCaisseBox() {
   el.parentElement.classList.toggle("negative", bal < 0);
   const sub = document.getElementById("caisse-balance-sub");
   if (sub) {
-    const at = new Date(vault.caisseBaseline.at);
-    sub.textContent = `Ventes en espèces depuis le dernier comptage (${at.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}), moins les dépôts au coffre et les frais payés avec la caisse.`;
+    const at = new Date(getCaisseBaseline().at);
+    sub.innerHTML = `Ventes en espèces depuis le dernier comptage (${at.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}), moins les dépôts au coffre et les frais payés avec la caisse.<br>${vaultStatusHtml()}`;
   }
+}
+
+function vaultStatusHtml() {
+  if (vaultSheetStatus === "ok") return `<span class="text-pos">☁️ Sauvegardé dans Google Sheets</span>`;
+  if (vaultSheetStatus === "loading") return `<span>⏳ Chargement de la sauvegarde…</span>`;
+  if (vaultSheetStatus === "offline") return `<span class="text-neg">⚠️ Pas de connexion : enregistré sur cet appareil, sera envoyé à Google Sheets au prochain chargement.</span>`;
+  return `<span class="text-neg">⚠️ Sauvegarde Google Sheets pas encore installée : montants gardés seulement sur cet appareil.</span>`;
 }
 
 // ---------- Fenêtre « montant » réutilisable ----------
@@ -3386,8 +3503,7 @@ function openDepositModal() {
     onConfirm: ({ amount, motif }) => {
       if (!(amount > 0)) return "Indique un montant valide.";
       if (amount > caisse) return `La caisse ne contient que ${fmt(caisse)} FCFA.`;
-      vault.moves.push({ id: Date.now(), at: new Date().toISOString(), type: "deposit", amount, motif: motif || "Dépôt depuis la caisse" });
-      saveVault();
+      addVaultMove({ at: new Date().toISOString(), type: "deposit", amount, motif: motif || "Dépôt depuis la caisse" });
       refreshProIfVisible();
       alert(`✅ ${fmt(amount)} FCFA déposés dans le coffre.`);
       return null;
@@ -3410,8 +3526,7 @@ function openWithdrawModal() {
       if (amount > coffre) return `Le coffre ne contient que ${fmt(coffre)} FCFA.`;
       if (motif.length < 3) return "Le motif est obligatoire pour tout décaissement.";
       const expense = createExpense({ category, motif, amount, source: "coffre" });
-      vault.moves.push({ id: Date.now(), at: expense.date, type: "withdraw", amount, motif, category, expenseId: expense.id });
-      saveVault();
+      addVaultMove({ at: expense.date, type: "withdraw", amount, motif, category, expenseId: String(expense.id) });
       renderExpensesTable();
       refreshProIfVisible();
       alert(`✅ ${fmt(amount)} FCFA sortis du coffre et ajoutés aux frais.`);
@@ -3434,8 +3549,7 @@ function openCoffreAdjustModal() {
       if (motif.length < 3) return "Le motif est obligatoire.";
       const delta = amount - coffre;
       if (delta === 0) return "Le montant est identique au solde actuel.";
-      vault.moves.push({ id: Date.now(), at: new Date().toISOString(), type: "adjust", delta, motif });
-      saveVault();
+      addVaultMove({ at: new Date().toISOString(), type: "adjust", delta, previous: coffre, amount, motif });
       refreshProIfVisible();
       return null;
     }
@@ -3454,9 +3568,7 @@ function openCaisseCountModal() {
     onConfirm: ({ amount, amountRaw, motif }) => {
       if (amountRaw === "" || !(amount >= 0)) return "Indique un montant valide.";
       const now = new Date().toISOString();
-      vault.moves.push({ id: Date.now(), at: now, type: "caisse-count", amount, previous: caisse, motif });
-      vault.caisseBaseline = { amount, at: now };
-      saveVault();
+      addVaultMove({ at: now, type: "caisse-count", amount, previous: caisse, motif: motif || "Comptage de caisse" });
       refreshProIfVisible();
       const diff = amount - caisse;
       if (diff !== 0) alert(`Caisse ajustée. Écart constaté : ${diff > 0 ? "+" : "−"}${fmt(Math.abs(diff))} FCFA.`);
@@ -3539,6 +3651,66 @@ function renderCoffreView() {
   tbody.innerHTML = rows.length
     ? rows.slice(0, 200).join("")
     : `<tr><td colspan="5">Aucune opération. Commence par « Ajuster le solde » si le coffre contient déjà de l'argent.</td></tr>`;
+
+  const status = document.getElementById("coffre-sync-status");
+  if (status) status.innerHTML = vaultStatusHtml();
+
+  renderEcarts();
+}
+
+// ✅ Tableau des écarts : devait y avoir / compté / différence
+function renderEcarts() {
+  const tbody = document.getElementById("ecarts-body");
+  if (!tbody) return;
+  const { from, to } = getProRange("month", todayLocalStr());
+
+  // le tout premier ajustement du coffre = solde de départ, pas un écart
+  const firstCoffreMove = vault.moves
+    .filter((m) => ["deposit", "withdraw", "adjust"].includes(m.type))
+    .sort((a, b) => new Date(a.at) - new Date(b.at))[0];
+
+  const controls = vault.moves
+    .filter((m) => (m.type === "caisse-count" && !/^Démarrage|^Reprise/.test(m.motif || "")) ||
+                   (m.type === "adjust" && m !== firstCoffreMove))
+    .map((m) => {
+      if (m.type === "caisse-count") {
+        const counted = Number(m.amount) || 0;
+        const expected = Number(m.previous) || 0;
+        return { at: m.at, where: "Caisse", expected, counted, diff: counted - expected, motif: m.motif };
+      }
+      const diff = Number(m.delta) || 0;
+      const expected = Number(m.previous) || 0;
+      return { at: m.at, where: "Coffre", expected, counted: expected + diff, diff, motif: m.motif };
+    })
+    .sort((a, b) => new Date(b.at) - new Date(a.at));
+
+  let caisseMonth = 0, coffreMonth = 0, countMonth = 0;
+  controls.forEach((c) => {
+    const k = dateKeyOf(c.at);
+    if (k < from || k > to) return;
+    countMonth++;
+    if (c.where === "Caisse") caisseMonth += c.diff; else coffreMonth += c.diff;
+  });
+
+  const showDiff = (d) => d === 0 ? `<span class="text-pos">0 ✅</span>`
+    : `<span class="${d > 0 ? "amount-in" : "amount-out"}">${d > 0 ? "+" : "−"}${fmt(Math.abs(d))} FCFA${d < 0 ? " ⚠️" : ""}</span>`;
+
+  const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  set("ecart-caisse-month", showDiff(caisseMonth));
+  set("ecart-coffre-month", showDiff(coffreMonth));
+  set("ecart-count-month", String(countMonth));
+
+  tbody.innerHTML = controls.length
+    ? controls.slice(0, 200).map((c) => `
+      <tr>
+        <td>${new Date(c.at).toLocaleString("fr-FR")}</td>
+        <td>${c.where}</td>
+        <td>${fmt(c.expected)} FCFA</td>
+        <td>${fmt(c.counted)} FCFA</td>
+        <td>${showDiff(c.diff)}</td>
+        <td>${proEscape(c.motif || "")}</td>
+      </tr>`).join("")
+    : `<tr><td colspan="6">Aucun comptage pour l'instant. Compte la caisse régulièrement (ex : chaque soir) pour repérer un problème.</td></tr>`;
 }
 
 // =====================================================================
@@ -4171,7 +4343,7 @@ document.addEventListener("DOMContentLoaded", () => {
   fillExpenseCategorySelect(document.getElementById("mm-category"));
   document.getElementById("mm-confirm")?.addEventListener("click", submitMoneyModal);
   document.getElementById("mm-amount")?.addEventListener("keydown", (e) => { if (e.key === "Enter") submitMoneyModal(); });
-  ensureCaisseBaseline();
+  syncVaultFromSheet(); // ✅ recharge caisse + coffre depuis Google Sheets
   setupResponsiveTables();
   renderExpensesTable();
   renderStockHistoryTable();
@@ -4191,6 +4363,11 @@ document.addEventListener("DOMContentLoaded", () => {
   if (discountInput) discountInput.addEventListener("input", renderCart);
 
   // Rafraîchissement auto ventes (30s)
+  // ✅ caisse + coffre resynchronisés avec Google Sheets toutes les 60 s (plusieurs appareils)
+  setInterval(() => {
+    if (vaultSheetStatus !== "missing") syncVaultFromSheet();
+  }, 60000);
+
   setInterval(() => {
     fetchSalesFromSheet();
   }, 30000);
