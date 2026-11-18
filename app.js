@@ -2162,8 +2162,10 @@ function updateSalesViewForSelectedDate() {
 }
 
 // ================== VENTES : SUPPRESSION (CORRIGÉE) ==================
-function deleteSale(saleId) {
-  if (!confirm("Supprimer définitivement cette vente ?")) return;
+async function deleteSale(saleId) {
+  const sale = (sales || []).find((s) => String(s.id) === String(saleId));
+  const detail = sale ? ` de ${fmt(sale.total)} FCFA` : "";
+  if (!(await requireDeletePassword(`Supprimer définitivement cette vente${detail} ?`))) return;
 
   const before = (sales || []).length;
   sales = (sales || []).filter((s) => String(s.id) !== String(saleId));
@@ -2435,9 +2437,9 @@ function addPerfume() {
 }
 
 // ✅ supprimer une référence
-function deletePerfume(index) {
+async function deletePerfume(index) {
   const p = perfumes[index];
-  if (!p || !confirm(`Supprimer la référence « ${p.name} » ?`)) return;
+  if (!p || !(await requireDeletePassword(`Supprimer la référence « ${p.name} » ?`))) return;
   perfumes.splice(index, 1);
   renderPerfumeBar();
   sendPerfumesToSheet();
@@ -2957,6 +2959,7 @@ function lockPro() {
   sessionStorage.removeItem(PRO_UNLOCK_KEY);
   renderProView();
   renderBilanView();
+  renderCoffreView();
 }
 
 // ---------- Affichage ----------
@@ -3145,9 +3148,9 @@ function addProCharge() {
   renderProNumbers();
 }
 
-function removeProCharge(i) {
+async function removeProCharge(i) {
   const c = proSettings.fixedCharges[i];
-  if (!c || !confirm(`Supprimer la charge « ${c.name} » ?`)) return;
+  if (!c || !(await requireDeletePassword(`Supprimer la charge « ${c.name} » ?`))) return;
   proSettings.fixedCharges.splice(i, 1);
   saveProSettings();
   renderProChargesList();
@@ -3190,6 +3193,51 @@ function updateProCost(input) {
   }
   saveProSettings();
   renderProNumbers();
+}
+
+// =====================================================================
+// ================== CODE OBLIGATOIRE POUR TOUTE SUPPRESSION ==================
+// =====================================================================
+// Pour mettre un code différent de celui de l'espace Pro, remplace PRO_PASSWORD
+// par un autre code entre guillemets, ex : const DELETE_PASSWORD = "1234";
+const DELETE_PASSWORD = PRO_PASSWORD;
+
+let deletePasswordResolver = null;
+
+// Ouvre la fenêtre de code → renvoie true si le bon code est saisi, false si annulé
+function requireDeletePassword(message, messageIsHtml = false) {
+  return new Promise((resolve) => {
+    const $ = (id) => document.getElementById(id);
+    if (messageIsHtml) $("pwd-message").innerHTML = message;
+    else $("pwd-message").textContent = message;
+    $("pwd-input").value = "";
+    $("pwd-error").classList.add("hidden");
+    $("pwd-modal").classList.remove("hidden");
+    deletePasswordResolver = resolve;
+    setTimeout(() => $("pwd-input").focus(), 50);
+  });
+}
+
+function submitDeletePassword(e) {
+  if (e) e.preventDefault();
+  const input = document.getElementById("pwd-input");
+  if (input.value === DELETE_PASSWORD) {
+    document.getElementById("pwd-modal").classList.add("hidden");
+    const r = deletePasswordResolver;
+    deletePasswordResolver = null;
+    if (r) r(true);
+  } else {
+    input.value = "";
+    document.getElementById("pwd-error").classList.remove("hidden");
+    input.focus();
+  }
+}
+
+function cancelDeletePassword() {
+  document.getElementById("pwd-modal").classList.add("hidden");
+  const r = deletePasswordResolver;
+  deletePasswordResolver = null;
+  if (r) r(false);
 }
 
 // =====================================================================
@@ -3417,7 +3465,36 @@ function openCaisseCountModal() {
   });
 }
 
+// ✅ Coffre protégé par le même code que Pro / Bilan
+function unlockCoffre(e) {
+  if (e) e.preventDefault();
+  const input = document.getElementById("coffre-password");
+  const err = document.getElementById("coffre-lock-error");
+  if (input.value === PRO_PASSWORD) {
+    sessionStorage.setItem(PRO_UNLOCK_KEY, "1");
+    input.value = "";
+    err.classList.add("hidden");
+    renderCoffreView();
+  } else {
+    input.value = "";
+    err.classList.remove("hidden");
+    input.focus();
+  }
+}
+
 function renderCoffreView() {
+  const lock = document.getElementById("coffre-lock");
+  const content = document.getElementById("coffre-content");
+  if (lock && content) {
+    const unlocked = isProUnlocked();
+    lock.classList.toggle("hidden", unlocked);
+    content.classList.toggle("hidden", !unlocked);
+    if (!unlocked) {
+      setTimeout(() => document.getElementById("coffre-password")?.focus(), 50);
+      return; // rien n'est calculé ni affiché sans le code
+    }
+  }
+
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   const coffre = computeCoffreBalance();
   const caisse = computeCaisseBalance();
@@ -3658,10 +3735,10 @@ function createProduct() {
   alert(`✅ Produit « ${name} » créé.`);
 }
 
-function deleteProduct(productId) {
+async function deleteProduct(productId) {
   const p = products.find((x) => x.id === productId);
   if (!p) return;
-  if (!confirm(`Supprimer définitivement le produit « ${p.name} » ?\n(Les anciennes ventes restent dans l'historique.)`)) return;
+  if (!(await requireDeletePassword(`Supprimer définitivement le produit « ${p.name} » ?<br><small>Les anciennes ventes restent dans l'historique.</small>`, true))) return;
 
   products = products.filter((x) => x.id !== productId);
   cart = cart.filter((item) => item.productId !== productId);

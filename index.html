@@ -26,7 +26,7 @@
       <button onclick="showView('produits')">Produits</button>
       <button onclick="showView('dashboard')">Tableau de bord</button>
       <button onclick="showView('frais')">Frais</button>
-      <button onclick="showView('coffre')">Coffre</button>
+      <button class="nav-pro" onclick="showView('coffre')">Coffre 🔒</button>
       <button onclick="showView('bar-parfum')">Bar à parfum</button>
       <button class="nav-pro" onclick="showView('bilan')">Bilan 🔒</button>
       <button class="nav-pro" onclick="showView('pro')">Pro 🔒</button>
@@ -425,6 +425,22 @@
     <section id="view-coffre" class="view hidden">
       <h2>Coffre</h2>
 
+      <!-- ✅ VERROU DU COFFRE -->
+      <div id="coffre-lock" class="pro-lock">
+        <div style="font-size:34px;">🔒</div>
+        <p class="help-text">Entre le code pour accéder au coffre.</p>
+        <form onsubmit="unlockCoffre(event)">
+          <input type="password" id="coffre-password" inputmode="numeric" maxlength="10" placeholder="Code" autocomplete="off" />
+          <button type="submit" class="primary-btn">Déverrouiller</button>
+        </form>
+        <p id="coffre-lock-error" class="pro-error hidden">Code incorrect.</p>
+      </div>
+
+      <div id="coffre-content" class="hidden">
+      <div style="display:flex; justify-content:flex-end;">
+        <button class="secondary-btn" onclick="lockPro()">🔒 Verrouiller</button>
+      </div>
+
       <div class="cash-box vault">
         <div class="cash-box-label">🔐 Disponible dans le coffre</div>
         <div class="cash-box-value"><span id="coffre-balance">0</span> FCFA</div>
@@ -456,6 +472,7 @@
         </thead>
         <tbody id="coffre-history-body"></tbody>
       </table>
+      </div>
     </section>
 
     <!-- ====== ONGLET CREDIT ====== -->
@@ -793,6 +810,23 @@
         <button class="primary-btn" id="mm-confirm">Valider</button>
         <button class="secondary-btn" onclick="closeMoneyModal()">Annuler</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ✅ CODE OBLIGATOIRE POUR SUPPRIMER -->
+  <div id="pwd-modal" class="modal hidden">
+    <div class="modal-content" style="max-width:380px;">
+      <h3 style="margin-top:0;">🔒 Suppression protégée</h3>
+      <p id="pwd-message" style="font-size:14px;"></p>
+      <form onsubmit="submitDeletePassword(event)">
+        <label for="pwd-input">Code</label>
+        <input type="password" id="pwd-input" inputmode="numeric" maxlength="10" autocomplete="off" placeholder="Code" />
+        <p id="pwd-error" class="pro-error hidden">Code incorrect. Suppression refusée.</p>
+        <div class="modal-actions">
+          <button type="submit" class="danger-btn" style="margin-top:0;">Supprimer</button>
+          <button type="button" class="secondary-btn" style="margin-top:0;" onclick="cancelDeletePassword()">Annuler</button>
+        </div>
+      </form>
     </div>
   </div>
 
