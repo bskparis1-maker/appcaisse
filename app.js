@@ -3280,6 +3280,7 @@ function loadVault() {
 
 let vault = loadVault();
 let vaultSheetStatus = "loading"; // loading | ok | missing (script Google pas installé) | offline
+let vaultSyncFailures = 0; // ✅ échecs d'affilée : on arrête de réessayer après 3
 
 function saveVault() {
   try {
@@ -3318,6 +3319,7 @@ function syncVaultFromSheet() {
       delete window[cb];
       script.remove();
       vaultSheetStatus = status;
+      vaultSyncFailures = status === "ok" ? 0 : vaultSyncFailures + 1;
       ensureCaisseBaseline();
       refreshProIfVisible();
       resolve(status);
@@ -3382,7 +3384,7 @@ function getCaisseBaseline() {
 // on enregistre un point de départ à 0 au début de la journée.
 function ensureCaisseBaseline() {
   if (vault.moves.some((m) => m.type === "caisse-count")) return;
-  if (vaultSheetStatus === "loading") return;
+  if (vaultSheetStatus !== "ok") return; // ✅ attendre une vraie réponse de Google Sheets
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   addVaultMove({ at: d.toISOString(), type: "caisse-count", amount: 0, previous: 0, motif: "Démarrage du suivi de caisse" });
@@ -3443,7 +3445,7 @@ function renderCaisseBox() {
 function vaultStatusHtml() {
   if (vaultSheetStatus === "ok") return `<span class="text-pos">☁️ Sauvegardé dans Google Sheets</span>`;
   if (vaultSheetStatus === "loading") return `<span>⏳ Chargement de la sauvegarde…</span>`;
-  if (vaultSheetStatus === "offline") return `<span class="text-neg">⚠️ Pas de connexion : enregistré sur cet appareil, sera envoyé à Google Sheets au prochain chargement.</span>`;
+  if (vaultSheetStatus === "offline") return `<span class="text-neg">⚠️ Google Sheets ne répond pas correctement (pas d'internet, ou script Google pas mis à jour en « Nouvelle version »). Montants gardés sur cet appareil, envoyés dès que ça remarche.</span>`;
   return `<span class="text-neg">⚠️ Sauvegarde Google Sheets pas encore installée : montants gardés seulement sur cet appareil.</span>`;
 }
 
@@ -4365,7 +4367,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // Rafraîchissement auto ventes (30s)
   // ✅ caisse + coffre resynchronisés avec Google Sheets toutes les 60 s (plusieurs appareils)
   setInterval(() => {
-    if (vaultSheetStatus !== "missing") syncVaultFromSheet();
+    // ✅ on arrête après 3 échecs d'affilée (évite d'insister si le script n'est pas à jour)
+    if (vaultSheetStatus !== "missing" && vaultSyncFailures < 3) syncVaultFromSheet();
   }, 60000);
 
   setInterval(() => {
