@@ -23,8 +23,8 @@
       <button onclick="showView('ventes')">Ventes</button>
       <button onclick="showView('credit')">Crédit</button> <!-- ✅ AJOUT -->
       <button onclick="showView('clients')">Clients</button>
-      <button onclick="showView('produits')">Produits</button>
-      <button onclick="showView('dashboard')">Tableau de bord</button>
+      <button class="nav-pro" onclick="showView('produits')">Produits 🔒</button>
+      <button class="nav-pro" onclick="showView('dashboard')">Tableau de bord 🔒</button>
       <button onclick="showView('frais')">Frais</button>
       <button class="nav-pro" onclick="showView('coffre')">Coffre 🔒</button>
       <button onclick="showView('bar-parfum')">Bar à parfum</button>
@@ -260,6 +260,22 @@
     <!-- ============ VUE PRODUITS ============ -->
     <section id="view-produits" class="view hidden">
       <h2>Produits & Stock</h2>
+      <!-- ✅ VERROU -->
+      <div id="lock-produits" class="pro-lock hidden">
+        <div style="font-size:34px;">🔒</div>
+        <p class="help-text">Entre le code pour accéder à « Produits ».</p>
+        <form onsubmit="unlockView(event, 'produits')">
+          <input type="password" id="lock-produits-input" inputmode="numeric" maxlength="10" placeholder="Code" autocomplete="off" />
+          <button type="submit" class="primary-btn">Déverrouiller</button>
+        </form>
+        <p id="lock-produits-error" class="pro-error hidden">Code incorrect.</p>
+      </div>
+
+      <div id="produits-content" class="hidden">
+      <div style="display:flex; justify-content:flex-end;">
+        <button class="secondary-btn" onclick="lockPro()">🔒 Verrouiller</button>
+      </div>
+
 
       <div class="dashboard-summary">
         <div class="card"><div class="label">Articles en stock</div><div class="value" id="stock-units">0</div></div>
@@ -329,11 +345,28 @@
         </thead>
         <tbody id="stock-history-body"></tbody>
       </table>
+          </div>
     </section>
 
     <!-- ============ VUE TABLEAU DE BORD ============ -->
     <section id="view-dashboard" class="view hidden">
       <h2>Tableau de bord</h2>
+      <!-- ✅ VERROU -->
+      <div id="lock-dashboard" class="pro-lock hidden">
+        <div style="font-size:34px;">🔒</div>
+        <p class="help-text">Entre le code pour accéder à « Tableau de bord ».</p>
+        <form onsubmit="unlockView(event, 'dashboard')">
+          <input type="password" id="lock-dashboard-input" inputmode="numeric" maxlength="10" placeholder="Code" autocomplete="off" />
+          <button type="submit" class="primary-btn">Déverrouiller</button>
+        </form>
+        <p id="lock-dashboard-error" class="pro-error hidden">Code incorrect.</p>
+      </div>
+
+      <div id="dashboard-content" class="hidden">
+      <div style="display:flex; justify-content:flex-end;">
+        <button class="secondary-btn" onclick="lockPro()">🔒 Verrouiller</button>
+      </div>
+
 
       <div class="dashboard-filters">
         <div>
@@ -361,6 +394,7 @@
       <div style="margin-top:18px;">
         <canvas id="dashboard-chart" width="400" height="200"></canvas>
       </div>
+          </div>
     </section>
 
     <!-- ============ VUE FRAIS ============ -->
@@ -375,13 +409,13 @@
           <label>Montant (FCFA) : <input type="number" id="expense-amount" min="0" placeholder="0" /></label>
           <label>Payé avec :
             <select id="expense-source">
-              <option value="caisse">Argent de la caisse (espèces)</option>
-              <option value="autre">Autre (Wave, Orange Money, poche…)</option>
+              <option value="caisse">💵 Argent de la caisse</option>
+              <option value="coffre">🔐 Argent du coffre (code demandé)</option>
             </select>
           </label>
         </div>
         <button class="primary-btn" onclick="addExpense()">Valider la dépense</button>
-        <p class="help-text">Pour sortir de l'argent du coffre, utilise l'onglet « Coffre » : la dépense s'ajoute ici automatiquement.</p>
+        <p class="help-text">Le montant est retiré automatiquement de la caisse ou du coffre. Pour le coffre, le code est demandé.</p>
       </div>
 
       <h3>Mes plus grandes dépenses</h3>
@@ -842,14 +876,14 @@
   <!-- ✅ CODE OBLIGATOIRE POUR SUPPRIMER -->
   <div id="pwd-modal" class="modal hidden">
     <div class="modal-content" style="max-width:380px;">
-      <h3 style="margin-top:0;">🔒 Suppression protégée</h3>
+      <h3 id="pwd-title" style="margin-top:0;">🔒 Suppression protégée</h3>
       <p id="pwd-message" style="font-size:14px;"></p>
       <form onsubmit="submitDeletePassword(event)">
         <label for="pwd-input">Code</label>
         <input type="password" id="pwd-input" inputmode="numeric" maxlength="10" autocomplete="off" placeholder="Code" />
-        <p id="pwd-error" class="pro-error hidden">Code incorrect. Suppression refusée.</p>
+        <p id="pwd-error" class="pro-error hidden">Code incorrect.</p>
         <div class="modal-actions">
-          <button type="submit" class="danger-btn" style="margin-top:0;">Supprimer</button>
+          <button type="submit" id="pwd-submit" class="danger-btn" style="margin-top:0;">Supprimer</button>
           <button type="button" class="secondary-btn" style="margin-top:0;" onclick="cancelDeletePassword()">Annuler</button>
         </div>
       </form>

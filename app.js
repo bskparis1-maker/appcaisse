@@ -404,6 +404,7 @@ function showView(viewName) {
   } else if (viewName === "bilan") {
     renderBilanView();
   } else if (viewName === "produits") {
+    if (!applyViewLock("produits")) return;
     renderProductsTable();
     renderStockHistoryTable();
   } else if (viewName === "clients") {
@@ -412,6 +413,7 @@ function showView(viewName) {
     initSalesDate();
     updateSalesViewForSelectedDate();
   } else if (viewName === "dashboard") {
+    if (!applyViewLock("dashboard")) return;
     initDashboardDates();
     loadDashboardStats();
   } else if (viewName === "frais") {
@@ -1551,7 +1553,7 @@ function setStockHistoryRangeYear() {
 }
 
 // ================== FRAIS ==================
-function addExpense() {
+async function addExpense() {
   const labelInput = document.getElementById("expense-label");
   const amountInput = document.getElementById("expense-amount");
   const categorySelect = document.getElementById("expense-category");
@@ -1561,7 +1563,7 @@ function addExpense() {
   const motif = (labelInput.value || "").trim();
   const amount = Number(amountInput.value) || 0;
   const category = categorySelect ? categorySelect.value : "Autre";
-  const source = sourceSelect ? sourceSelect.value : "autre";
+  const source = sourceSelect ? sourceSelect.value : "caisse";
 
   if (!motif) return alert("Merci de renseigner le motif de la dépense.");
   if (amount <= 0) return alert("Merci de renseigner un montant valide.");
@@ -1575,15 +1577,37 @@ function addExpense() {
     }
   }
 
+  // ✅ payé avec le coffre : code obligatoire + solde suffisant
+  if (source === "coffre") {
+    const coffre = computeCoffreBalance();
+    if (amount > coffre) {
+      return alert(`Le coffre ne contient que ${fmt(coffre)} FCFA. Dépense non enregistrée.`);
+    }
+    const ok = await requirePassword({
+      title: "🔐 Paiement avec le coffre",
+      message: `Sortir <strong>${fmt(amount)} FCFA</strong> du coffre pour « ${proEscape(motif)} » ?`,
+      messageIsHtml: true,
+      confirmLabel: "Valider"
+    });
+    if (!ok) return;
+  }
+
   const expense = createExpense({ category, motif, amount, source });
+
+  // ✅ le coffre est diminué (même mouvement que « Décaisser du coffre »)
+  if (source === "coffre") {
+    addVaultMove({ at: expense.date, type: "withdraw", amount, motif, category, expenseId: String(expense.id) });
+  }
 
   labelInput.value = "";
   amountInput.value = "";
 
+  if (sourceSelect) sourceSelect.value = "caisse";
+
   renderExpensesTable();
   renderExpensesPie();
-  renderCaisseBox();
-  alert("Dépense enregistrée.");
+  refreshProIfVisible(); // met à jour caisse + coffre
+  alert(source === "coffre" ? "Dépense enregistrée et retirée du coffre." : "Dépense enregistrée et retirée de la caisse.");
   return expense;
 }
 
@@ -2960,6 +2984,41 @@ function lockPro() {
   renderProView();
   renderBilanView();
   renderCoffreView();
+  applyViewLock("produits");
+  applyViewLock("dashboard");
+}
+
+// ✅ Verrou des onglets Produits et Tableau de bord (même code, même déverrouillage)
+// Renvoie true si l'onglet est déverrouillé.
+function applyViewLock(view) {
+  const lock = document.getElementById(`lock-${view}`);
+  const content = document.getElementById(`${view}-content`);
+  if (!lock || !content) return true;
+  const unlocked = isProUnlocked();
+  lock.classList.toggle("hidden", unlocked);
+  content.classList.toggle("hidden", !unlocked);
+  if (!unlocked) {
+    const input = document.getElementById(`lock-${view}-input`);
+    const v = document.getElementById(`view-${view}`);
+    if (input && v && !v.classList.contains("hidden")) setTimeout(() => input.focus(), 50);
+  }
+  return unlocked;
+}
+
+function unlockView(e, view) {
+  if (e) e.preventDefault();
+  const input = document.getElementById(`lock-${view}-input`);
+  const err = document.getElementById(`lock-${view}-error`);
+  if (input.value === PRO_PASSWORD) {
+    sessionStorage.setItem(PRO_UNLOCK_KEY, "1");
+    input.value = "";
+    err.classList.add("hidden");
+    showView(view); // affiche et calcule l'onglet
+  } else {
+    input.value = "";
+    err.classList.remove("hidden");
+    input.focus();
+  }
 }
 
 // ---------- Affichage ----------
@@ -2973,7 +3032,7 @@ function refreshProIfVisible() {
   if (isVisible("view-pro") && isProUnlocked()) renderProNumbers();
   if (isVisible("view-bilan") && isProUnlocked()) renderBilanNumbers();
   if (isVisible("view-coffre")) renderCoffreView();
-  if (isVisible("view-produits")) { renderStockValue(); renderReorderTasks(); }
+  if (isVisible("view-produits") && isProUnlocked()) { renderStockValue(); renderReorderTasks(); }
   renderCaisseBox();
   updateNavBadges();
 }
@@ -3206,8 +3265,15 @@ let deletePasswordResolver = null;
 
 // Ouvre la fenêtre de code → renvoie true si le bon code est saisi, false si annulé
 function requireDeletePassword(message, messageIsHtml = false) {
+  return requirePassword({ title: "🔒 Suppression protégée", message, messageIsHtml, confirmLabel: "Supprimer" });
+}
+
+// ✅ Fenêtre de code générique (suppressions, paiement avec le coffre…)
+function requirePassword({ title, message, messageIsHtml = false, confirmLabel = "Valider" }) {
   return new Promise((resolve) => {
     const $ = (id) => document.getElementById(id);
+    $("pwd-title").textContent = title || "🔒 Code demandé";
+    $("pwd-submit").textContent = confirmLabel;
     if (messageIsHtml) $("pwd-message").innerHTML = message;
     else $("pwd-message").textContent = message;
     $("pwd-input").value = "";
