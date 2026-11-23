@@ -110,6 +110,10 @@ const livWa = (t) => { const d = String(t || "").replace(/\D/g, ""); return d ? 
 const livProduits = (c) => { try { return JSON.parse(c["Produits"] || "[]"); } catch (e) { return []; } };
 const livMethod = (label) => (LIV_PAIEMENTS.find((p) => p.label === label) || LIV_PAIEMENTS[0]).method;
 const livParId = (id) => liv.commandes.find((c) => c["ID"] === id);
+// « client » = le client paie le livreur directement (frais hors caisse) ; anciennes commandes = « boutique »
+const livPayeur = (c) => (c["Livreur payé par"] === "client" ? "client" : "boutique");
+// ce que la boutique encaisse (sans les frais si le client paie le livreur)
+const livMontantBoutique = (c) => livPayeur(c) === "client" ? Number(c["Sous-total"]) || 0 : Number(c["Total"]) || 0;
 
 function livNav(vue) {
   liv.vue = vue;
@@ -183,7 +187,7 @@ function livRendreListe() {
     const livs = `<option value="">— Livreur —</option>` + liv.livreurs.map((l) =>
       `<option ${l["Nom"] === c["Livreur"] ? "selected" : ""}>${proEscape(l["Nom"])}</option>`).join("");
     const caisse = livree
-      ? `<div class="help-text">✅ Comptée en caisse${c["Vente caisse"] ? "" : " (paiement déjà fait en boutique)"}${Number(c["Coût livreur"]) > 0 ? ` • livreur ${fmt(c["Coût livreur"])} F dans Frais` : ""}</div>`
+      ? `<div class="help-text">✅ Comptée en caisse${c["Vente caisse"] ? ` : ${fmt(livMontantBoutique(c))} F` : " (paiement déjà fait en boutique)"}${livPayeur(c) === "boutique" && Number(c["Coût livreur"]) > 0 ? ` • livreur ${fmt(c["Coût livreur"])} F dans Frais` : ""}</div>`
       : "";
     return `
       <div class="liv-card liv-b-${k}">
@@ -196,7 +200,7 @@ function livRendreListe() {
             ${c["Note"] ? `<div class="liv-mut">📝 ${proEscape(c["Note"])}</div>` : ""}
           </div>
           <div class="liv-prix">${fmt(c["Total"])} FCFA
-            <div class="liv-mut">dont livraison ${fmt(c["Frais livraison"])}</div>
+            <div class="liv-mut">dont livraison ${fmt(c["Frais livraison"])}${livPayeur(c) === "client" && Number(c["Frais livraison"]) > 0 ? " (payée au livreur)" : ""}</div>
             <div style="margin-top:4px">
               <span class="badge liv-st-${k}">${proEscape(c["Statut"])}</span>
               <span class="badge ${c["Payé"] === "Oui" ? "pos" : "neg"}">${c["Payé"] === "Oui" ? "Payé" : "Non payé"}</span>
@@ -263,8 +267,10 @@ async function livLivree(id) {
   if (!c) return;
   const method = livMethod(c["Paiement"]);
   const lignes = livProduits(c);
-  const frais = Number(c["Frais livraison"]) || 0;
-  const cout = Number(c["Coût livreur"] === "" || c["Coût livreur"] == null ? frais : c["Coût livreur"]) || 0;
+  const clientPaie = livPayeur(c) === "client";
+  // si le client paie le livreur : ni frais dans la vente, ni dépense
+  const frais = clientPaie ? 0 : Number(c["Frais livraison"]) || 0;
+  const cout = clientPaie ? 0 : Number(c["Coût livreur"] === "" || c["Coût livreur"] == null ? frais : c["Coût livreur"]) || 0;
 
   // vérification du stock (seulement si la vente n'a pas déjà été faite en boutique)
   if (method) {
@@ -279,9 +285,11 @@ async function livLivree(id) {
   }
 
   const resume = (method
-    ? `• Vente de ${fmt(c["Total"])} FCFA en ${formatPaymentMethod(method)} ajoutée aux ventes du jour\n• Stock diminué\n`
+    ? `• Vente de ${fmt(livMontantBoutique(c))} FCFA en ${formatPaymentMethod(method)} ajoutée aux ventes du jour\n• Stock diminué\n`
     : `• Paiement déjà fait en boutique : pas de nouvelle vente\n`) +
-    (cout > 0 ? `• ${fmt(cout)} FCFA payés au livreur, retirés de la caisse (Frais)` : "• Aucun frais de livreur");
+    (clientPaie
+      ? (Number(c["Frais livraison"]) > 0 ? `• Livraison (${fmt(c["Frais livraison"])} FCFA) payée au livreur par le client : pas dans la caisse` : "• Pas de frais de livraison")
+      : (cout > 0 ? `• ${fmt(cout)} FCFA payés au livreur, retirés de la caisse (Frais)` : "• Aucun frais de livreur"));
   if (!confirm(`Commande ${id} livrée à ${c["Client"]} ?\n\n${resume}`)) return;
 
   try {
@@ -356,8 +364,16 @@ function livMessageClient(c) {
 }
 function livMessageLivreur(c) {
   const p = livProduits(c).map((x) => `- ${x.qte} × ${x.nom}`).join("\n");
-  const enc = c["Payé"] === "Oui" || !livMethod(c["Paiement"]) ? "DÉJÀ PAYÉ : rien à encaisser"
-    : `À ENCAISSER : ${fmt(c["Total"])} FCFA (${c["Paiement"]})`;
+  const fraisLiv = Number(c["Frais livraison"]) || 0;
+  const produitsPayes = c["Payé"] === "Oui" || !livMethod(c["Paiement"]);
+  let enc;
+  if (livPayeur(c) === "client" && fraisLiv > 0) {
+    enc = produitsPayes
+      ? `Produits DÉJÀ PAYÉS. Encaisse seulement ta livraison : ${fmt(fraisLiv)} FCFA (pour toi)`
+      : `À ENCAISSER : ${fmt(c["Total"])} FCFA (${c["Paiement"]})\n= produits ${fmt(c["Sous-total"])} à rapporter à la boutique + ta livraison ${fmt(fraisLiv)}`;
+  } else {
+    enc = produitsPayes ? "DÉJÀ PAYÉ : rien à encaisser" : `À ENCAISSER : ${fmt(c["Total"])} FCFA (${c["Paiement"]})`;
+  }
   return `🛵 Livraison ${c["ID"]}\nClient : ${c["Client"]}\nTél : ${c["Téléphone"]}\nAdresse : ${c["Adresse"] || "—"}` +
     (c["Repère"] ? `\nRepère : ${c["Repère"]}` : "") + `\n\n${p}\n\n${enc}` + (c["Note"] ? `\nNote : ${c["Note"]}` : "");
 }
@@ -429,21 +445,49 @@ function livCalculer() {
   if (!fraisEl) return;
   if (!liv.coutModifie) coutEl.value = fraisEl.value;
   const fr = Number(fraisEl.value) || 0;
+  const clientPaie = document.getElementById("liv-payeur").value === "client";
+  document.getElementById("liv-cout-wrap").classList.toggle("hidden", clientPaie);
   document.getElementById("liv-total").innerHTML =
-    `Produits ${fmt(st)} + livraison ${fmt(fr)} = <strong>${fmt(st + fr)} FCFA</strong>`;
+    `Le client paie : produits ${fmt(st)} + livraison ${fmt(fr)} = <strong>${fmt(st + fr)} FCFA</strong>` +
+    `<br><span class="help-text">Dans la caisse : ${fmt(clientPaie ? st : st + fr)} FCFA` +
+    (clientPaie ? (fr ? ` (la livraison va directement au livreur)` : "") : (Number(coutEl.value) ? ` • ${fmt(coutEl.value)} FCFA payés au livreur (Frais)` : "")) + `</span>`;
 }
 
+// Nom choisi dans la liste → on complète le téléphone
 function livClientTape() {
   const nom = document.getElementById("liv-client").value.trim().toLowerCase();
   const c = (clients || []).find((x) => (x.name || "").toLowerCase() === nom);
-  if (c && c.phone && !document.getElementById("liv-tel").value) document.getElementById("liv-tel").value = c.phone;
-  livRemplirAdresse();
+  if (c && c.phone && !document.getElementById("liv-tel").value) {
+    document.getElementById("liv-tel").value = c.phone;
+    livTelTape();
+  }
 }
+
+// ✅ On commence par le numéro : client reconnu → nom rempli ; sinon il sera créé à l'enregistrement
 function livTelTape() {
-  const t = livTel9(document.getElementById("liv-tel").value);
-  const c = (clients || []).find((x) => t && livTel9(x.phone) === t);
-  if (c && !document.getElementById("liv-client").value) document.getElementById("liv-client").value = c.name;
-  livRemplirAdresse();
+  const telEl = document.getElementById("liv-tel");
+  const nomEl = document.getElementById("liv-client");
+  const info = document.getElementById("liv-client-info");
+  const t = livTel9(telEl.value);
+  const c = t.length >= 9 ? (clients || []).find((x) => livTel9(x.phone) === t) : null;
+
+  if (c) {
+    if (!nomEl.value || liv.nomAuto) { nomEl.value = c.name; liv.nomAuto = true; }
+    info.className = "liv-client-info existe";
+    const nb = liv.commandes.filter((x) => livTel9(x["Téléphone"]) === t).length;
+    info.innerHTML = `✅ Client existant : <strong>${proEscape(c.name)}</strong>` +
+      (nb ? ` • ${nb} livraison${nb > 1 ? "s" : ""} déjà faite${nb > 1 ? "s" : ""}` : "") +
+      (isClientBirthdaySoon(c) ? " • 🎂 anniversaire dans les 72h" : "");
+    livRemplirAdresse();
+  } else if (t.length >= 9) {
+    if (liv.nomAuto) { nomEl.value = ""; liv.nomAuto = false; }
+    info.className = "liv-client-info nouveau";
+    info.innerHTML = "🆕 Nouveau client : tape son nom, il sera ajouté à l'onglet Clients en enregistrant la commande.";
+    setTimeout(() => nomEl.focus(), 0);
+  } else {
+    info.className = "liv-client-info hidden";
+    info.innerHTML = "";
+  }
 }
 // reprend l'adresse de la dernière livraison de ce client
 function livRemplirAdresse() {
@@ -460,6 +504,9 @@ function livViderForm() {
   ["liv-id", "liv-client", "liv-tel", "liv-adresse", "liv-repere", "liv-note"].forEach((i) => (document.getElementById(i).value = ""));
   document.getElementById("liv-frais").value = 0;
   document.getElementById("liv-cout").value = 0;
+  document.getElementById("liv-payeur").value = "client";
+  document.getElementById("liv-client-info").className = "liv-client-info hidden";
+  liv.nomAuto = false;
   document.getElementById("liv-date").value = todayLocalStr();
   document.getElementById("liv-paiement").value = LIV_PAIEMENTS[0].label;
   document.getElementById("liv-livreur").value = "";
@@ -484,6 +531,7 @@ function livModifier(id) {
   document.getElementById("liv-frais").value = c["Frais livraison"] || 0;
   document.getElementById("liv-cout").value = c["Coût livreur"] === "" ? (c["Frais livraison"] || 0) : c["Coût livreur"];
   liv.coutModifie = String(document.getElementById("liv-cout").value) !== String(document.getElementById("liv-frais").value);
+  document.getElementById("liv-payeur").value = livPayeur(c);
   document.getElementById("liv-date").value = c["Livraison prévue"];
   document.getElementById("liv-paiement").value = c["Paiement"];
   document.getElementById("liv-livreur").value = c["Livreur"];
@@ -493,6 +541,7 @@ function livModifier(id) {
   if (!document.querySelector("#liv-lignes .liv-ligne")) livAjouterLigne();
   liv.source = c["Source"] || "";
   livRemplirListesForm();
+  livTelTape();
 }
 
 // Retrouve le client de la caisse (par téléphone, sinon par nom) ou le crée
@@ -501,7 +550,8 @@ function livClientCaisse(nom, tel) {
   let c = (clients || []).find((x) => t && livTel9(x.phone) === t) ||
     (clients || []).find((x) => !t && (x.name || "").toLowerCase() === nom.toLowerCase());
   if (!c) {
-    c = { id: Date.now(), name: nom, phone: tel, createdAt: new Date().toISOString(), birthdate: "" };
+    const phone = typeof formatClientPhone === "function" ? formatClientPhone(tel) : tel;
+    c = { id: Date.now(), name: nom.replace(/\s+/g, " "), phone, createdAt: new Date().toISOString(), birthdate: "" };
     clients.push(c);
     saveClients(clients);
     sendClientToSheet(c);
@@ -513,7 +563,7 @@ function livClientCaisse(nom, tel) {
 
 async function livEnregistrer() {
   const $ = (i) => document.getElementById(i);
-  const nom = $("liv-client").value.trim();
+  const nom = $("liv-client").value.trim().replace(/\s+/g, " ");
   const tel = $("liv-tel").value.trim();
   const lignes = livLignes();
   if (!liv.source) return alert("Choisis la source de la commande (Live, Instagram…).");
@@ -530,7 +580,8 @@ async function livEnregistrer() {
     repere: $("liv-repere").value.trim(),
     produits: lignes,
     frais: Number($("liv-frais").value) || 0,
-    coutLivreur: Number($("liv-cout").value) || 0,
+    payeur: $("liv-payeur").value,
+    coutLivreur: $("liv-payeur").value === "client" ? 0 : Number($("liv-cout").value) || 0,
     dateLivraison: $("liv-date").value,
     paiement: $("liv-paiement").value,
     paye: !livMethod($("liv-paiement").value),
@@ -586,8 +637,8 @@ function livRendreLivreurs() {
     const mes = liv.commandes.filter((c) => c["Livreur"] === l["Nom"]);
     const enCours = mes.filter((c) => ["Assignée", "En route"].includes(c["Statut"])).length;
     const auj = mes.filter((c) => c["Statut"] === "Livrée" && String(c["Livrée le"]).startsWith(j));
-    const especes = auj.filter((c) => livMethod(c["Paiement"]) === "cash").reduce((s, c) => s + (Number(c["Total"]) || 0), 0);
-    const paye = auj.reduce((s, c) => s + (Number(c["Coût livreur"]) || 0), 0);
+    const especes = auj.filter((c) => livMethod(c["Paiement"]) === "cash").reduce((s, c) => s + livMontantBoutique(c), 0);
+    const paye = auj.filter((c) => livPayeur(c) === "boutique").reduce((s, c) => s + (Number(c["Coût livreur"]) || 0), 0);
     return `<tr>
       <td><strong>${proEscape(l["Nom"])}</strong><br><small>${proEscape(l["Téléphone"])}</small></td>
       <td>${enCours}</td>
@@ -611,8 +662,11 @@ function livRendreBilan() {
   const annulees = recues.filter((c) => ["Annulée", "Retournée"].includes(c["Statut"])).length;
   const somme = (L, k) => L.reduce((s, c) => s + (Number(c[k]) || 0), 0);
   const enCours = liv.commandes.filter((c) => LIV_ACTIFS.includes(c["Statut"]));
-  const fraisFactures = somme(livrees, "Frais livraison");
-  const fraisPayes = somme(livrees, "Coût livreur");
+  const parBoutique = livrees.filter((c) => livPayeur(c) === "boutique");
+  const parClient = livrees.filter((c) => livPayeur(c) === "client");
+  const fraisFactures = somme(parBoutique, "Frais livraison");
+  const fraisPayes = somme(parBoutique, "Coût livreur");
+  const caBoutique = livrees.reduce((s, c) => s + livMontantBoutique(c), 0);
 
   const card = (label, value, sub = "") =>
     `<div class="card"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ""}</div>`;
@@ -621,9 +675,10 @@ function livRendreBilan() {
     card("Livrées", fmt(livrees.length)) +
     card("En cours (maintenant)", fmt(enCours.length)) +
     card("Annulées / retournées", fmt(annulees), recues.length ? `${Math.round((annulees * 100) / recues.length)}%` : "") +
-    card("CA livré", fmt(somme(livrees, "Total")) + " FCFA") +
-    card("Frais facturés aux clients", fmt(fraisFactures) + " FCFA") +
-    card("Payé aux livreurs", fmt(fraisPayes) + " FCFA",
+    card("CA livré (dans la caisse)", fmt(caBoutique) + " FCFA") +
+    card("Livraisons payées par les clients au livreur", fmt(somme(parClient, "Frais livraison")) + " FCFA", `${parClient.length} commande(s), hors caisse`) +
+    card("Frais facturés (boutique paie le livreur)", fmt(fraisFactures) + " FCFA") +
+    card("Payé aux livreurs par la caisse", fmt(fraisPayes) + " FCFA",
       fraisFactures - fraisPayes >= 0 ? `<span class="text-pos">+${fmt(fraisFactures - fraisPayes)} gardé</span>` : `<span class="text-neg">−${fmt(fraisPayes - fraisFactures)} à ta charge</span>`) +
     card("Panier moyen", fmt(livrees.length ? somme(livrees, "Sous-total") / livrees.length : 0) + " FCFA");
 
@@ -632,7 +687,7 @@ function livRendreBilan() {
     const k = c["Source"] || "Non renseignée";
     parSource[k] = parSource[k] || { n: 0, l: 0, t: 0 };
     parSource[k].n++;
-    if (c["Statut"] === "Livrée") { parSource[k].l++; parSource[k].t += Number(c["Total"]) || 0; }
+    if (c["Statut"] === "Livrée") { parSource[k].l++; parSource[k].t += livMontantBoutique(c); }
   });
   const lignes = Object.entries(parSource).sort((a, b) => b[1].n - a[1].n);
   document.getElementById("liv-sources-body").innerHTML = lignes.length
@@ -643,7 +698,7 @@ function livRendreBilan() {
   livrees.forEach((c) => {
     const z = String(c["Adresse"] || "—").split(",")[0].trim() || "—";
     zones[z] = zones[z] || { n: 0, t: 0 };
-    zones[z].n++; zones[z].t += Number(c["Total"]) || 0;
+    zones[z].n++; zones[z].t += livMontantBoutique(c);
   });
   const zl = Object.entries(zones).sort((a, b) => b[1].n - a[1].n).slice(0, 10);
   document.getElementById("liv-zones-body").innerHTML = zl.length
@@ -660,7 +715,10 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("liv-frais")?.addEventListener("input", livCalculer);
   document.getElementById("liv-cout")?.addEventListener("input", () => { liv.coutModifie = true; });
   document.getElementById("liv-client")?.addEventListener("change", livClientTape);
-  document.getElementById("liv-tel")?.addEventListener("change", livTelTape);
+  document.getElementById("liv-tel")?.addEventListener("input", livTelTape);
+  document.getElementById("liv-client")?.addEventListener("input", () => { liv.nomAuto = false; });
+  document.getElementById("liv-payeur")?.addEventListener("change", livCalculer);
+  document.getElementById("liv-cout")?.addEventListener("input", livCalculer);
   document.getElementById("liv-rech")?.addEventListener("input", livRendreListe);
   document.getElementById("liv-f-livreur")?.addEventListener("change", livRendreListe);
   document.getElementById("liv-f-source")?.addEventListener("change", livRendreListe);

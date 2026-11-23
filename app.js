@@ -972,7 +972,7 @@ function openAddClientModal() {
   $("client-form-error").classList.add("hidden");
   checkClientFormDuplicate();
   $("client-form-modal").classList.remove("hidden");
-  setTimeout(() => $("client-form-name").focus(), 50);
+  setTimeout(() => $("client-form-phone").focus(), 50);
 }
 
 function closeClientFormModal() {

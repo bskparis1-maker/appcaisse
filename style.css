@@ -1228,3 +1228,14 @@ nav .nav-badge {
   font-size: 13px;
 }
 .client-duplicate .secondary-btn { margin-top: 6px; }
+
+/* ✅ Livraisons : client reconnu / nouveau */
+.liv-client-info {
+  margin: 6px 0 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  border: 1px solid #e5e7eb;
+}
+.liv-client-info.existe { background: #f0fdf4; border-color: #86efac; }
+.liv-client-info.nouveau { background: #eff6ff; border-color: #93c5fd; }

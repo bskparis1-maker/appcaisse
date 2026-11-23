@@ -608,11 +608,11 @@
           <div id="liv-sources" class="dashboard-quick" style="margin-bottom:8px;"></div>
 
           <div class="form-grid">
-            <label>Client * (liste des clients de la caisse)
-              <input type="text" id="liv-client" list="liv-dl-clients" autocomplete="off" placeholder="Nom du client" />
+            <label>Téléphone du client *
+              <input type="tel" id="liv-tel" inputmode="tel" placeholder="77 123 45 67" autocomplete="off" />
             </label>
-            <label>Téléphone *
-              <input type="tel" id="liv-tel" inputmode="tel" placeholder="77 123 45 67" />
+            <label>Nom du client *
+              <input type="text" id="liv-client" list="liv-dl-clients" autocomplete="off" placeholder="Rempli tout seul si le client existe" />
             </label>
             <label>Adresse / quartier
               <input type="text" id="liv-adresse" placeholder="Ex : Sacré-Cœur 3, villa 120" />
@@ -622,17 +622,23 @@
             </label>
           </div>
           <datalist id="liv-dl-clients"></datalist>
-          <p class="help-text">Si le client n'existe pas encore, il est ajouté automatiquement à l'onglet Clients.</p>
+          <div id="liv-client-info" class="liv-client-info hidden"></div>
 
           <h3>Produits *</h3>
           <div id="liv-lignes"></div>
           <button type="button" class="secondary-btn" onclick="livAjouterLigne()">+ Ajouter un produit</button>
 
           <div class="form-grid" style="margin-top:10px;">
-            <label>Frais de livraison payés par le client (FCFA)
+            <label>Frais de livraison (FCFA)
               <input type="number" id="liv-frais" min="0" value="0" />
             </label>
-            <label>Payé au livreur (FCFA) → Frais, caisse
+            <label>Qui paie le livreur ?
+              <select id="liv-payeur">
+                <option value="client">Le client paie le livreur (rien dans la caisse)</option>
+                <option value="boutique">La boutique paie le livreur (caisse)</option>
+              </select>
+            </label>
+            <label id="liv-cout-wrap" class="hidden">Montant payé au livreur par la boutique (FCFA)
               <input type="number" id="liv-cout" min="0" value="0" />
             </label>
             <label>Livraison prévue le
@@ -654,8 +660,9 @@
             </label>
           </div>
           <p class="total-label" id="liv-total"></p>
-          <p class="help-text">Quand la commande sera marquée <strong>Livrée</strong> : la vente est ajoutée à la caisse, le stock diminue
-            et le montant « payé au livreur » est ajouté aux Frais (retiré de la caisse).
+          <p class="help-text">Quand la commande sera marquée <strong>Livrée</strong> : la vente des produits est ajoutée à la caisse et le stock diminue.
+            Si <strong>le client paie le livreur</strong>, les frais de livraison ne passent ni par la caisse ni par les ventes du jour.
+            Si <strong>la boutique paie le livreur</strong>, les frais payés par le client sont dans la vente et le montant payé au livreur va dans Frais (retiré de la caisse).
             « Déjà payé en boutique » = la vente a déjà été passée en caisse, elle n'est pas comptée 2 fois.</p>
           <button class="primary-btn" id="liv-btn-save" onclick="livEnregistrer()">💾 Enregistrer la commande</button>
           <button class="secondary-btn" onclick="livViderForm();livNav('liste')">Annuler</button>
@@ -942,12 +949,12 @@
     <div class="modal-content" style="max-width:420px;">
       <h3 id="client-form-title" style="margin-top:0;">Nouveau client</h3>
       <form onsubmit="saveClientFromModal(event)">
-        <label for="client-form-name">Nom *</label>
-        <input type="text" id="client-form-name" placeholder="Ex : Awa Diop" autocomplete="off" />
-
         <label for="client-form-phone">Téléphone</label>
         <input type="tel" id="client-form-phone" inputmode="tel" placeholder="Ex : 77 123 45 67" autocomplete="off" />
         <div id="client-form-duplicate" class="client-duplicate hidden"></div>
+
+        <label for="client-form-name">Nom *</label>
+        <input type="text" id="client-form-name" placeholder="Ex : Awa Diop" autocomplete="off" />
 
         <label for="client-form-birthdate">Date de naissance (pour la remise anniversaire)</label>
         <input type="date" id="client-form-birthdate" />
