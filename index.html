@@ -937,24 +937,28 @@
   <script src="app.js"></script>
   <script src="livraisons.js"></script>
 
-  <!-- MODALE AJOUT / MODIF CLIENT -->
+  <!-- ✅ MODALE NOUVEAU CLIENT -->
   <div id="client-form-modal" class="modal hidden">
-    <div class="modal-content">
-      <h3 id="client-form-title">Ajouter un client</h3>
+    <div class="modal-content" style="max-width:420px;">
+      <h3 id="client-form-title" style="margin-top:0;">Nouveau client</h3>
+      <form onsubmit="saveClientFromModal(event)">
+        <label for="client-form-name">Nom *</label>
+        <input type="text" id="client-form-name" placeholder="Ex : Awa Diop" autocomplete="off" />
 
-      <label>Nom</label>
-      <input type="text" id="client-form-name" placeholder="Nom du client">
+        <label for="client-form-phone">Téléphone</label>
+        <input type="tel" id="client-form-phone" inputmode="tel" placeholder="Ex : 77 123 45 67" autocomplete="off" />
+        <div id="client-form-duplicate" class="client-duplicate hidden"></div>
 
-      <label>Téléphone (optionnel)</label>
-      <input type="text" id="client-form-phone" placeholder="Téléphone">
+        <label for="client-form-birthdate">Date de naissance (pour la remise anniversaire)</label>
+        <input type="date" id="client-form-birthdate" />
 
-      <label>Date de naissance (optionnel)</label>
-      <input type="date" id="client-form-birthdate">
+        <p id="client-form-error" class="pro-error hidden"></p>
 
-      <div style="margin-top:10px; display:flex; gap:8px;">
-        <button class="primary-btn" onclick="saveClientFromModal()">Enregistrer</button>
-        <button class="secondary-btn" onclick="closeClientFormModal()">Annuler</button>
-      </div>
+        <div class="modal-actions">
+          <button type="submit" class="primary-btn" style="margin-top:0;">Enregistrer</button>
+          <button type="button" class="secondary-btn" style="margin-top:0;" onclick="closeClientFormModal()">Annuler</button>
+        </div>
+      </form>
     </div>
   </div>
 

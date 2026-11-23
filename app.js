@@ -942,25 +942,94 @@ function renderClientSelect() {
   }
 }
 
+// ✅ Nouveau client : une seule fenêtre + alerte si le numéro existe déjà
+function clientPhoneKey(phone) {
+  // « +221 77 123 45 67 », « 771234567 », « 77-123-45-67 » → même clé (9 derniers chiffres)
+  const d = String(phone || "").replace(/\D/g, "");
+  return d.length > 9 ? d.slice(-9) : d;
+}
+
+function findClientByPhone(phone) {
+  const k = clientPhoneKey(phone);
+  if (k.length < 7) return null;
+  return (clients || []).find((c) => clientPhoneKey(c.phone) === k) || null;
+}
+
+function formatClientPhone(phone) {
+  // numéro sénégalais à 9 chiffres → « 77 123 45 67 », sinon on garde ce qui a été tapé
+  const k = clientPhoneKey(phone);
+  if (/^[37]\d{8}$/.test(k)) return `${k.slice(0, 2)} ${k.slice(2, 5)} ${k.slice(5, 7)} ${k.slice(7)}`;
+  return String(phone || "").trim();
+}
+
+let clientFormDuplicate = null;
+
 function openAddClientModal() {
-  const name = prompt("Nom du client :");
-  if (!name || !name.trim()) return;
+  const $ = (id) => document.getElementById(id);
+  $("client-form-name").value = "";
+  $("client-form-phone").value = "";
+  $("client-form-birthdate").value = "";
+  $("client-form-error").classList.add("hidden");
+  checkClientFormDuplicate();
+  $("client-form-modal").classList.remove("hidden");
+  setTimeout(() => $("client-form-name").focus(), 50);
+}
 
-  const phone = prompt("Téléphone du client (optionnel) :") || "";
-  const birthdateInput =
-    prompt("Date de naissance (optionnel, format AAAA-MM-JJ, ex : 1995-08-21) :") ||
-    "";
+function closeClientFormModal() {
+  document.getElementById("client-form-modal").classList.add("hidden");
+}
 
-  let birthdate = "";
-  if (birthdateInput.trim()) {
-    const d = new Date(birthdateInput.trim());
-    if (!isNaN(d.getTime())) birthdate = d.toISOString().slice(0, 10);
+// Vérifie en direct si le numéro tapé appartient déjà à un client
+function checkClientFormDuplicate() {
+  const box = document.getElementById("client-form-duplicate");
+  const phone = document.getElementById("client-form-phone").value;
+  clientFormDuplicate = findClientByPhone(phone);
+  if (!box) return;
+  if (!clientFormDuplicate) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+  const c = clientFormDuplicate;
+  box.innerHTML = `⚠️ Ce numéro est déjà celui de <strong>${proEscape(c.name)}</strong>` +
+    `${c.birthdate ? " (né(e) le " + formatBirthdateShort(c.birthdate) + ")" : ""}.<br>` +
+    `<button type="button" class="secondary-btn small-btn" onclick="useExistingClient()">Choisir ${proEscape(c.name)}</button>`;
+  box.classList.remove("hidden");
+}
+
+// Doublon trouvé → on prend le client existant au lieu d'en créer un 2e
+function useExistingClient() {
+  const c = clientFormDuplicate;
+  if (!c) return;
+  closeClientFormModal();
+  selectClientInCaisse(c.id);
+}
+
+function selectClientInCaisse(clientId) {
+  renderClientSelect();
+  const select = document.getElementById("client-select");
+  if (select) { select.value = String(clientId); renderCart(); }
+}
+
+function saveClientFromModal(e) {
+  if (e) e.preventDefault();
+  const $ = (id) => document.getElementById(id);
+  const err = $("client-form-error");
+  const showError = (msg) => { err.textContent = msg; err.classList.remove("hidden"); };
+
+  const name = $("client-form-name").value.trim().replace(/\s+/g, " ");
+  const phoneRaw = $("client-form-phone").value.trim();
+  const birthdate = $("client-form-birthdate").value; // déjà au format AAAA-MM-JJ
+
+  if (!name) return showError("Le nom est obligatoire.");
+  if (phoneRaw && clientPhoneKey(phoneRaw).length < 7) return showError("Numéro de téléphone incomplet.");
+  checkClientFormDuplicate();
+  if (clientFormDuplicate) return showError(`Ce numéro existe déjà (${clientFormDuplicate.name}). Choisis ce client ou corrige le numéro.`);
+  if (!phoneRaw) {
+    const sameName = (clients || []).find((c) => (c.name || "").trim().toLowerCase() === name.toLowerCase());
+    if (sameName && !confirm(`Un client s'appelle déjà « ${sameName.name} »${sameName.phone ? " (" + sameName.phone + ")" : ""}. Créer quand même un nouveau client ?`)) return;
   }
 
   const newClient = {
     id: Date.now(),
-    name: name.trim(),
-    phone: phone.trim(),
+    name,
+    phone: formatClientPhone(phoneRaw),
     createdAt: new Date().toISOString(),
     birthdate
   };
@@ -969,9 +1038,9 @@ function openAddClientModal() {
   saveClients(clients);
   sendClientToSheet(newClient);
 
-  renderClientSelect();
+  closeClientFormModal();
   renderClientsTable();
-  alert("Client ajouté.");
+  selectClientInCaisse(newClient.id); // ✅ le nouveau client est déjà choisi dans la caisse
 }
 
 // ================== CONFIRMATION VENTE ==================
@@ -4431,6 +4500,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const discountInput = document.getElementById("cart-discount");
   if (discountInput) discountInput.addEventListener("input", renderCart);
+
+  // ✅ formulaire nouveau client
+  document.getElementById("client-form-phone")?.addEventListener("input", checkClientFormDuplicate);
+  document.getElementById("client-form-modal")?.addEventListener("keydown", (e) => { if (e.key === "Escape") closeClientFormModal(); });
 
   // Rafraîchissement auto ventes (30s)
   // ✅ caisse + coffre resynchronisés avec Google Sheets toutes les 60 s (plusieurs appareils)
