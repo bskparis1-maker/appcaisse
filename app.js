@@ -2036,6 +2036,58 @@ function computeClientTotal(clientId) {
   return sum;
 }
 
+// ✅ Statistiques d'un client : achats (ventes caisse + livraisons), adresse de livraison
+// index des ventes et livraisons par client (recalculé seulement quand les données changent)
+let clientIndexCache = { key: null };
+function getClientIndex() {
+  const livs = typeof liv !== "undefined" ? liv.commandes || [] : [];
+  const key = [sales, (sales || []).length, livs, livs.length];
+  const c = clientIndexCache;
+  if (c.key && c.key.every((v, i) => v === key[i])) return c;
+  const byId = {}, byPhone = {}, livByPhone = {};
+  (sales || []).forEach((s) => {
+    if (s.clientId) (byId[String(s.clientId)] = byId[String(s.clientId)] || []).push(s);
+    else { const k = clientPhoneKey(s.clientPhone); if (k.length >= 9) (byPhone[k] = byPhone[k] || []).push(s); }
+  });
+  livs.forEach((l) => { const k = clientPhoneKey(l["Téléphone"]); if (k.length >= 9) (livByPhone[k] = livByPhone[k] || []).push(l); });
+  clientIndexCache = { key, byId, byPhone, livByPhone };
+  return clientIndexCache;
+}
+
+function getClientStats(c) {
+  const k = clientPhoneKey(c.phone);
+  const idx = getClientIndex();
+  const achats = (idx.byId[String(c.id)] || []).concat(k.length >= 9 ? idx.byPhone[k] || [] : []);
+  const dates = achats.map((s) => s.date).filter((d) => !isNaN(new Date(d).getTime()))
+    .sort((a, b) => new Date(a) - new Date(b));
+  const livs = (k.length >= 9 ? idx.livByPhone[k] || [] : []).slice()
+    .sort((a, b) => String(a["Créée le"]).localeCompare(String(b["Créée le"])));
+  const avecAdresse = livs.filter((l) => l["Adresse"]);
+  const derniere = avecAdresse[avecAdresse.length - 1];
+  const total = achats.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+  const dernier = dates[dates.length - 1] || null;
+  return {
+    achats: achats.length,
+    total,
+    panier: achats.length ? total / achats.length : 0,
+    premier: dates[0] || null,
+    dernier,
+    joursDepuis: dernier ? Math.floor((Date.now() - new Date(dernier).getTime()) / 86400000) : null,
+    adresse: derniere ? derniere["Adresse"] : "",
+    repere: derniere ? derniere["Repère"] || "" : "",
+    livraisons: livs.length,
+    source: livs.length ? livs[0]["Source"] || "" : ""
+  };
+}
+
+function joursTexte(j) {
+  if (j === null || j === undefined) return "—";
+  if (j === 0) return "aujourd'hui";
+  if (j === 1) return "hier";
+  if (j < 60) return `il y a ${j} j`;
+  return `il y a ${Math.round(j / 30)} mois`;
+}
+
 function renderClientsTable() {
   const tbody = document.getElementById("clients-table-body");
   if (!tbody) return;
@@ -2045,30 +2097,32 @@ function renderClientsTable() {
 
   tbody.innerHTML = "";
 
-  const list = (clients || []).filter(
-    (c) =>
+  const list = (clients || [])
+    .map((c) => ({ c, st: getClientStats(c) }))
+    .filter(({ c, st }) =>
       (c.name || "").toLowerCase().includes(term) ||
-      (c.phone || "").toLowerCase().includes(term)
-  );
+      (c.phone || "").toLowerCase().includes(term) ||
+      (st.adresse || "").toLowerCase().includes(term));
 
   if (list.length === 0) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="5">Aucun client trouvé.</td>`;
+    tr.innerHTML = `<td colspan="7">Aucun client trouvé.</td>`;
     tbody.appendChild(tr);
     renderBirthdaySection();
+    renderRelances();
     return;
   }
 
-  list.forEach((c) => {
-    const totalSpent = computeClientTotal(c.id);
+  list.forEach(({ c, st }) => {
     const soon = isClientBirthdaySoon(c);
-
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${c.name}${soon ? " 🎂" : ""}</td>
-      <td>${c.phone || ""}</td>
+      <td>${proEscape(c.name)}${soon ? " 🎂" : ""}</td>
+      <td>${proEscape(c.phone || "")}</td>
+      <td>${st.adresse ? proEscape(st.adresse) + (st.repere ? `<br><small class="help-text">${proEscape(st.repere)}</small>` : "") : "—"}</td>
       <td>${formatBirthdateShort(c.birthdate)}</td>
-      <td>${totalSpent} FCFA</td>
+      <td>${fmt(st.total)} FCFA</td>
+      <td>${joursTexte(st.joursDepuis)}</td>
       <td>
         <button class="secondary-btn" onclick="openClientPopup('${c.id}')">Détails</button>
       </td>
@@ -2077,6 +2131,143 @@ function renderClientsTable() {
   });
 
   renderBirthdaySection();
+  renderRelances();
+}
+
+// =====================================================================
+// ================== ✅ CLASSEMENTS & RELANCES ==================
+// =====================================================================
+const RELANCE_KEY = "bsk_relances";            // { clientId: { at, cat } } (gardé sur cet appareil)
+const RELANCE_MSG_KEY = "bsk_relance_messages";
+const RELANCE_JOURS_DORMANT = 60;              // « pas commandé depuis 2 mois »
+
+const RELANCE_CATS = {
+  vip: {
+    help: "Les 20 clients qui ont dépensé le plus. Un petit message de remerciement les garde fidèles.",
+    msg: "Bonjour {prenom} 💛\n\nTu fais partie de nos meilleures clientes chez BSK, merci pour ta confiance !\nPour te remercier, nous t'offrons une petite surprise sur ta prochaine commande cette semaine 🎁\n\nÀ très vite chez BSK !"
+  },
+  dormant: {
+    help: `Clients qui ont déjà acheté mais rien depuis plus de ${RELANCE_JOURS_DORMANT} jours. Les plus gros clients sont en haut : commence par eux.`,
+    msg: "Bonjour {prenom} 👋\n\nÇa fait longtemps qu'on ne t'a pas vue chez BSK ! Nous avons reçu de nouveaux parfums et brumes qui devraient te plaire 😍\n\nRéponds à ce message et on te livre où tu veux. À très vite 💛"
+  },
+  nouveau: {
+    help: "Clients avec un seul achat il y a 7 à 45 jours. C'est le bon moment pour les faire revenir une 2e fois.",
+    msg: "Bonjour {prenom} 😊\n\nMerci encore pour ton premier achat chez BSK ! Est-ce que ton parfum te plaît ?\n\nSi tu veux découvrir d'autres senteurs, on peut te conseiller et te livrer directement 💛"
+  },
+  jamais: {
+    help: "Clients enregistrés qui n'ont encore rien acheté (contact pris, live, demande de prix…).",
+    msg: "Bonjour {prenom} 👋\n\nC'est BSK ! Tu nous avais contactés, est-ce qu'on peut t'aider à choisir ton parfum ?\nNous livrons partout à Dakar 🛵\n\nÀ très vite 💛"
+  }
+};
+
+let relanceCat = "dormant";
+
+function loadRelances() {
+  try { return JSON.parse(localStorage.getItem(RELANCE_KEY) || "{}"); } catch (e) { return {}; }
+}
+function loadRelanceMessages() {
+  try { return JSON.parse(localStorage.getItem(RELANCE_MSG_KEY) || "{}"); } catch (e) { return {}; }
+}
+function getRelanceMessage(cat) {
+  return loadRelanceMessages()[cat] || RELANCE_CATS[cat].msg;
+}
+function saveRelanceMessage(text) {
+  const all = loadRelanceMessages();
+  all[relanceCat] = text;
+  try { localStorage.setItem(RELANCE_MSG_KEY, JSON.stringify(all)); } catch (e) {}
+}
+function resetRelanceMessage() {
+  const all = loadRelanceMessages();
+  delete all[relanceCat];
+  try { localStorage.setItem(RELANCE_MSG_KEY, JSON.stringify(all)); } catch (e) {}
+  document.getElementById("relance-message").value = RELANCE_CATS[relanceCat].msg;
+}
+
+function setRelanceCat(cat) {
+  relanceCat = cat;
+  renderRelances();
+}
+
+function computeRelanceLists() {
+  const all = (clients || []).map((c) => ({ c, st: getClientStats(c) }));
+  const relances = loadRelances();
+  const dejaRelance = (x) => {
+    const r = relances[String(x.c.id)];
+    return r ? Math.floor((Date.now() - new Date(r.at).getTime()) / 86400000) : null;
+  };
+  all.forEach((x) => { x.relanceJours = dejaRelance(x); });
+
+  const vip = all.filter((x) => x.st.total > 0).sort((a, b) => b.st.total - a.st.total).slice(0, 20);
+  const dormant = all.filter((x) => x.st.achats > 0 && x.st.joursDepuis >= RELANCE_JOURS_DORMANT)
+    // pas encore relancés d'abord (ou relancés il y a plus de 30 j), puis les plus gros clients
+    .sort((a, b) => ((a.relanceJours !== null && a.relanceJours < 30) - (b.relanceJours !== null && b.relanceJours < 30)) || b.st.total - a.st.total);
+  const nouveau = all.filter((x) => x.st.achats === 1 && x.st.joursDepuis >= 7 && x.st.joursDepuis <= 45)
+    .sort((a, b) => a.st.joursDepuis - b.st.joursDepuis);
+  const jamais = all.filter((x) => x.st.achats === 0)
+    .sort((a, b) => new Date(b.c.createdAt || 0) - new Date(a.c.createdAt || 0));
+  return { vip, dormant, nouveau, jamais, tous: all };
+}
+
+function renderRelances() {
+  const tbody = document.getElementById("relance-body");
+  if (!tbody) return;
+  const L = computeRelanceLists();
+
+  // chiffres clés
+  const actifs = L.tous.filter((x) => x.st.joursDepuis !== null && x.st.joursDepuis < RELANCE_JOURS_DORMANT).length;
+  const caDormant = L.dormant.reduce((s, x) => s + x.st.panier, 0);
+  const kpis = document.getElementById("relance-kpis");
+  if (kpis) kpis.innerHTML =
+    `<div class="card"><div class="label">Clients actifs (achat < 2 mois)</div><div class="value">${fmt(actifs)}</div></div>` +
+    `<div class="card"><div class="label">À relancer (+2 mois)</div><div class="value">${fmt(L.dormant.length)}</div><div class="sub">≈ ${fmt(caDormant)} FCFA si chacun revient 1 fois</div></div>` +
+    `<div class="card"><div class="label">Nouveaux à fidéliser</div><div class="value">${fmt(L.nouveau.length)}</div></div>` +
+    `<div class="card"><div class="label">Jamais acheté</div><div class="value">${fmt(L.jamais.length)}</div></div>`;
+
+  document.querySelectorAll(".relance-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.cat === relanceCat);
+    const n = L[b.dataset.cat].length;
+    if (!b.dataset.label) b.dataset.label = b.textContent.trim();
+    b.textContent = `${b.dataset.label} (${n})`;
+  });
+  document.getElementById("relance-help").textContent = RELANCE_CATS[relanceCat].help;
+  const ta = document.getElementById("relance-message");
+  if (ta && document.activeElement !== ta) ta.value = getRelanceMessage(relanceCat);
+
+  const list = L[relanceCat];
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="7">Personne dans cette liste pour le moment 👍</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = list.slice(0, 100).map((x, i) => {
+    const { c, st } = x;
+    const rang = relanceCat === "vip" ? (i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1) : i + 1;
+    const relance = x.relanceJours !== null
+      ? `<small class="${x.relanceJours < 30 ? "text-pos" : "help-text"}">✅ relancé ${joursTexte(x.relanceJours)}</small><br>` : "";
+    const wa = clientPhoneKey(c.phone).length >= 9;
+    return `<tr class="${x.relanceJours !== null && x.relanceJours < 30 ? "relance-faite" : ""}">
+      <td>${rang}</td>
+      <td><strong>${proEscape(c.name)}</strong>${isClientBirthdaySoon(c) ? " 🎂" : ""}<br><small>${proEscape(c.phone || "pas de numéro")}</small></td>
+      <td>${st.adresse ? proEscape(st.adresse) : "—"}</td>
+      <td>${st.achats}${st.livraisons ? ` <small class="help-text">(${st.livraisons} livr.)</small>` : ""}</td>
+      <td>${fmt(st.total)} FCFA${st.achats > 1 ? `<br><small class="help-text">panier ${fmt(st.panier)}</small>` : ""}</td>
+      <td>${joursTexte(st.joursDepuis)}</td>
+      <td>${relance}${wa ? `<button class="small-btn" onclick="relancerClient('${c.id}')">💬 WhatsApp</button>` : `<small class="help-text">pas de numéro</small>`}</td>
+    </tr>`;
+  }).join("");
+}
+
+// Ouvre WhatsApp avec le message de la liste et note la relance (date) sur cet appareil
+function relancerClient(clientId) {
+  const c = (clients || []).find((x) => String(x.id) === String(clientId));
+  if (!c) return;
+  const prenom = String(c.name || "").trim().split(/\s+/)[0] || "";
+  const msg = getRelanceMessage(relanceCat).replace(/\{prenom\}/g, prenom);
+  const k = clientPhoneKey(c.phone);
+  window.open(`https://wa.me/221${k}?text=${encodeURIComponent(msg)}`, "_blank");
+  const r = loadRelances();
+  r[String(c.id)] = { at: new Date().toISOString(), cat: relanceCat };
+  try { localStorage.setItem(RELANCE_KEY, JSON.stringify(r)); } catch (e) {}
+  renderRelances();
 }
 
 function renderBirthdaySection() {
@@ -2143,6 +2334,19 @@ function openClientPopup(clientId) {
   phoneEl.textContent = c.phone || "—";
   historyDiv.innerHTML = "";
 
+  // ✅ adresse de livraison + résumé
+  const extra = document.getElementById("popup-client-extra");
+  if (extra) {
+    const st = getClientStats(c);
+    extra.innerHTML =
+      `<div><strong>Adresse :</strong> ${st.adresse ? proEscape(st.adresse) : "—"}${st.repere ? ` <small class="help-text">(${proEscape(st.repere)})</small>` : ""}</div>` +
+      (c.birthdate ? `<div><strong>Anniversaire :</strong> ${formatBirthdateShort(c.birthdate)}${isClientBirthdaySoon(c) ? " 🎂" : ""}</div>` : "") +
+      `<div><strong>Achats :</strong> ${st.achats} • <strong>Total :</strong> ${fmt(st.total)} FCFA • <strong>Dernier achat :</strong> ${joursTexte(st.joursDepuis)}</div>` +
+      (st.livraisons ? `<div><strong>Livraisons :</strong> ${st.livraisons}${st.source ? ` • 1re commande via ${proEscape(st.source)}` : ""}</div>` : "") +
+      (clientPhoneKey(c.phone).length >= 9
+        ? `<button class="secondary-btn small-btn" onclick="window.open('https://wa.me/221${clientPhoneKey(c.phone)}','_blank')">💬 Écrire sur WhatsApp</button>` : "");
+  }
+
   const historySales = (sales || [])
     .filter((s) => String(s.clientId) === String(clientId))
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -2178,6 +2382,87 @@ function openClientPopup(clientId) {
 function closeClientPopup() {
   const modal = document.getElementById("popup-client");
   if (modal) modal.classList.add("hidden");
+}
+
+// =====================================================================
+// ================== ✅ EXPORT DE LA BASE CLIENTS (code obligatoire) ==================
+// =====================================================================
+// Fichier .csv (séparateur « ; ») qui s'ouvre directement dans Excel en français.
+function exportDateFr(v) {
+  if (!v) return "";
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return String(v);
+  return d.toLocaleDateString("fr-FR");
+}
+
+// Date de naissance : on garde le jour tel quel (pas de décalage de fuseau)
+function exportBirthdate(v) {
+  if (!v) return "";
+  const s = String(v);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return fmtDateFr(s);
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return s;
+  // valeur Google Sheets (minuit heure locale du script) : on arrondit au jour le plus proche
+  const r = new Date(d.getTime() + 12 * 3600 * 1000);
+  return `${String(r.getUTCDate()).padStart(2, "0")}/${String(r.getUTCMonth() + 1).padStart(2, "0")}/${r.getUTCFullYear()}`;
+}
+
+async function exportClientsDatabase() {
+  const ok = await requirePassword({
+    title: "🔒 Exporter la base clients",
+    message: `Télécharger la liste des ${(clients || []).length} clients (noms, téléphones, achats) ?`,
+    confirmLabel: "Télécharger"
+  });
+  if (!ok) return;
+
+  const livs = typeof liv !== "undefined" ? liv.commandes || [] : [];
+  const key = (p) => clientPhoneKey(p);
+
+  const rows = (clients || []).map((c) => {
+    const k = key(c.phone);
+    const achats = (sales || []).filter((s) =>
+      (s.clientId && String(s.clientId) === String(c.id)) || (!s.clientId && k.length >= 9 && key(s.clientPhone) === k));
+    const total = achats.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+    const dernier = achats.map((s) => s.date).filter(Boolean).sort().pop();
+    const sesLivraisons = livs.filter((l) => k.length >= 9 && key(l["Téléphone"]) === k)
+      .sort((a, b) => String(a["Créée le"]).localeCompare(String(b["Créée le"])));
+    const derniereLiv = sesLivraisons[sesLivraisons.length - 1];
+    return [
+      c.name || "",
+      c.phone || "",
+      exportBirthdate(c.birthdate),
+      exportDateFr(c.createdAt),
+      achats.length,
+      total,
+      exportDateFr(dernier),
+      sesLivraisons.length,
+      derniereLiv ? derniereLiv["Adresse"] || "" : "",
+      derniereLiv ? derniereLiv["Repère"] || "" : "",
+      sesLivraisons.length ? sesLivraisons[0]["Source"] || "" : ""
+    ];
+  }).sort((a, b) => b[5] - a[5]); // meilleurs clients en premier
+
+  const header = ["Nom", "Téléphone", "Date de naissance", "Client depuis", "Nombre d'achats",
+    "Total dépensé (FCFA)", "Dernier achat", "Livraisons", "Adresse", "Repère", "Source (1re commande)"];
+
+  const cell = (v) => {
+    const s = String(v ?? "");
+    return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  // le téléphone est écrit ="..." pour qu'Excel garde les espaces et le 0 de tête
+  const lines = [header, ...rows].map((r, i) => r.map((v, j) =>
+    i > 0 && j === 1 && v ? `="${String(v).replace(/"/g, "")}"` : cell(v)).join(";"));
+  const csv = "﻿" + lines.join("\r\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `BSK-clients-${todayLocalStr()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
 // ================== VENTES : AFFICHAGE JOURNALIER ==================

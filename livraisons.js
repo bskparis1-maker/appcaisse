@@ -92,6 +92,8 @@ async function livCharger(silencieux) {
   } finally {
     liv.chargement = false;
     livRendre();
+    // adresses de livraison affichées dans l'onglet Clients
+    if (!document.getElementById("view-clients")?.classList.contains("hidden")) renderClientsTable();
   }
 }
 

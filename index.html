@@ -237,6 +237,9 @@
         <button class="primary-btn" onclick="openAddClientModal()">
           Ajouter un client
         </button>
+        <button class="secondary-btn" onclick="exportClientsDatabase()">
+          ⬇️ Exporter la base clients 🔒
+        </button>
       </div>
 
       <table>
@@ -244,13 +247,49 @@
           <tr>
             <th>Nom</th>
             <th>Téléphone</th>
+            <th>Adresse</th>
             <th>Date de naissance</th>
             <th>Total dépensé</th>
+            <th>Dernier achat</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody id="clients-table-body"></tbody>
       </table>
+
+      <!-- ✅ CLASSEMENTS & RELANCES -->
+      <div class="payment-section" style="margin-top:20px;">
+        <h3>📊 Classements & relances</h3>
+        <div class="dashboard-summary" id="relance-kpis"></div>
+        <div class="dashboard-quick" style="margin-top:10px;">
+          <button class="secondary-btn relance-btn" data-cat="vip" onclick="setRelanceCat('vip')">🏆 Meilleurs clients</button>
+          <button class="secondary-btn relance-btn" data-cat="dormant" onclick="setRelanceCat('dormant')">😴 Pas commandé depuis 2 mois</button>
+          <button class="secondary-btn relance-btn" data-cat="nouveau" onclick="setRelanceCat('nouveau')">🌱 Nouveaux à fidéliser</button>
+          <button class="secondary-btn relance-btn" data-cat="jamais" onclick="setRelanceCat('jamais')">💤 Jamais acheté</button>
+        </div>
+        <p id="relance-help" class="help-text"></p>
+
+        <details class="relance-msg">
+          <summary>✏️ Message WhatsApp de cette liste (modifiable)</summary>
+          <textarea id="relance-message" rows="4" oninput="saveRelanceMessage(this.value)"></textarea>
+          <p class="help-text">« {prenom} » est remplacé par le prénom du client. <button type="button" class="secondary-btn small-btn" onclick="resetRelanceMessage()">Remettre le message par défaut</button></p>
+        </details>
+
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Client</th>
+              <th>Adresse</th>
+              <th>Achats</th>
+              <th>Total dépensé</th>
+              <th>Dernier achat</th>
+              <th>Relance</th>
+            </tr>
+          </thead>
+          <tbody id="relance-body"></tbody>
+        </table>
+      </div>
 
       <div class="card" style="margin-top:20px; padding:12px; border:1px solid #e5e7eb; border-radius:8px;">
         <h3 style="margin-top:0;">Anniversaires dans les 72h</h3>
@@ -1043,6 +1082,7 @@
       <div style="margin-top:10px;">
         <div><strong>Nom :</strong> <span id="popup-client-name"></span></div>
         <div><strong>Téléphone :</strong> <span id="popup-client-phone"></span></div>
+        <div id="popup-client-extra"></div>
       </div>
 
       <h4 style="margin-top:14px;">Historique des achats</h4>
