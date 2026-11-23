@@ -2088,48 +2088,8 @@ function joursTexte(j) {
   return `il y a ${Math.round(j / 30)} mois`;
 }
 
+// L'onglet Clients n'affiche plus qu'une seule liste : « Classements & relances » (catégorie « Tous » par défaut)
 function renderClientsTable() {
-  const tbody = document.getElementById("clients-table-body");
-  if (!tbody) return;
-
-  const searchInput = document.getElementById("client-search");
-  const term = searchInput ? searchInput.value.trim().toLowerCase() : "";
-
-  tbody.innerHTML = "";
-
-  const list = (clients || [])
-    .map((c) => ({ c, st: getClientStats(c) }))
-    .filter(({ c, st }) =>
-      (c.name || "").toLowerCase().includes(term) ||
-      (c.phone || "").toLowerCase().includes(term) ||
-      (st.adresse || "").toLowerCase().includes(term));
-
-  if (list.length === 0) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="7">Aucun client trouvé.</td>`;
-    tbody.appendChild(tr);
-    renderBirthdaySection();
-    renderRelances();
-    return;
-  }
-
-  list.forEach(({ c, st }) => {
-    const soon = isClientBirthdaySoon(c);
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${proEscape(c.name)}${soon ? " 🎂" : ""}</td>
-      <td>${proEscape(c.phone || "")}</td>
-      <td>${st.adresse ? proEscape(st.adresse) + (st.repere ? `<br><small class="help-text">${proEscape(st.repere)}</small>` : "") : "—"}</td>
-      <td>${formatBirthdateShort(c.birthdate)}</td>
-      <td>${fmt(st.total)} FCFA</td>
-      <td>${joursTexte(st.joursDepuis)}</td>
-      <td>
-        <button class="secondary-btn" onclick="openClientPopup('${c.id}')">Détails</button>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-
   renderBirthdaySection();
   renderRelances();
 }
@@ -2142,6 +2102,10 @@ const RELANCE_MSG_KEY = "bsk_relance_messages";
 const RELANCE_JOURS_DORMANT = 60;              // « pas commandé depuis 2 mois »
 
 const RELANCE_CATS = {
+  tous: {
+    help: "Tous les clients, ceux qui ont dépensé le plus en haut. Utilise la recherche pour trouver un nom, un numéro ou un quartier.",
+    msg: "Bonjour {prenom} 👋\n\nC'est BSK ! Nous avons de nouveaux parfums et brumes en ce moment 😍\nRéponds à ce message si tu veux qu'on te conseille ou qu'on te livre.\n\nÀ très vite 💛"
+  },
   vip: {
     help: "Les 20 clients qui ont dépensé le plus. Un petit message de remerciement les garde fidèles.",
     msg: "Bonjour {prenom} 💛\n\nTu fais partie de nos meilleures clientes chez BSK, merci pour ta confiance !\nPour te remercier, nous t'offrons une petite surprise sur ta prochaine commande cette semaine 🎁\n\nÀ très vite chez BSK !"
@@ -2160,7 +2124,7 @@ const RELANCE_CATS = {
   }
 };
 
-let relanceCat = "dormant";
+let relanceCat = "tous";
 
 function loadRelances() {
   try { return JSON.parse(localStorage.getItem(RELANCE_KEY) || "{}"); } catch (e) { return {}; }
@@ -2205,7 +2169,8 @@ function computeRelanceLists() {
     .sort((a, b) => a.st.joursDepuis - b.st.joursDepuis);
   const jamais = all.filter((x) => x.st.achats === 0)
     .sort((a, b) => new Date(b.c.createdAt || 0) - new Date(a.c.createdAt || 0));
-  return { vip, dormant, nouveau, jamais, tous: all };
+  const tous = all.slice().sort((a, b) => b.st.total - a.st.total || String(a.c.name).localeCompare(String(b.c.name), "fr"));
+  return { vip, dormant, nouveau, jamais, tous, all };
 }
 
 function renderRelances() {
@@ -2214,7 +2179,7 @@ function renderRelances() {
   const L = computeRelanceLists();
 
   // chiffres clés
-  const actifs = L.tous.filter((x) => x.st.joursDepuis !== null && x.st.joursDepuis < RELANCE_JOURS_DORMANT).length;
+  const actifs = L.all.filter((x) => x.st.joursDepuis !== null && x.st.joursDepuis < RELANCE_JOURS_DORMANT).length;
   const caDormant = L.dormant.reduce((s, x) => s + x.st.panier, 0);
   const kpis = document.getElementById("relance-kpis");
   if (kpis) kpis.innerHTML =
@@ -2233,14 +2198,21 @@ function renderRelances() {
   const ta = document.getElementById("relance-message");
   if (ta && document.activeElement !== ta) ta.value = getRelanceMessage(relanceCat);
 
-  const list = L[relanceCat];
+  // recherche (nom, téléphone, quartier) appliquée à la liste affichée
+  const term = (document.getElementById("client-search")?.value || "").trim().toLowerCase();
+  const termTel = clientPhoneKey(term);
+  const list = L[relanceCat].filter((x) => !term ||
+    (x.c.name || "").toLowerCase().includes(term) ||
+    (termTel.length >= 3 && clientPhoneKey(x.c.phone).includes(termTel)) ||
+    (x.st.adresse || "").toLowerCase().includes(term));
   if (!list.length) {
-    tbody.innerHTML = `<tr><td colspan="7">Personne dans cette liste pour le moment 👍</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7">${term ? "Aucun client trouvé." : "Personne dans cette liste pour le moment 👍"}</td></tr>`;
     return;
   }
-  tbody.innerHTML = list.slice(0, 100).map((x, i) => {
+  const max = relanceCat === "tous" ? 500 : 100;
+  tbody.innerHTML = list.slice(0, max).map((x, i) => {
     const { c, st } = x;
-    const rang = relanceCat === "vip" ? (i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1) : i + 1;
+    const rang = (relanceCat === "vip" || relanceCat === "tous") && st.total > 0 ? (i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1) : i + 1;
     const relance = x.relanceJours !== null
       ? `<small class="${x.relanceJours < 30 ? "text-pos" : "help-text"}">✅ relancé ${joursTexte(x.relanceJours)}</small><br>` : "";
     const wa = clientPhoneKey(c.phone).length >= 9;
@@ -2251,9 +2223,10 @@ function renderRelances() {
       <td>${st.achats}${st.livraisons ? ` <small class="help-text">(${st.livraisons} livr.)</small>` : ""}</td>
       <td>${fmt(st.total)} FCFA${st.achats > 1 ? `<br><small class="help-text">panier ${fmt(st.panier)}</small>` : ""}</td>
       <td>${joursTexte(st.joursDepuis)}</td>
-      <td>${relance}${wa ? `<button class="small-btn" onclick="relancerClient('${c.id}')">💬 WhatsApp</button>` : `<small class="help-text">pas de numéro</small>`}</td>
+      <td>${relance}<button class="small-btn" onclick="openClientPopup('${c.id}')">Détails</button>
+        ${wa ? `<button class="small-btn" onclick="relancerClient('${c.id}')">💬 WhatsApp</button>` : `<small class="help-text">pas de numéro</small>`}</td>
     </tr>`;
-  }).join("");
+  }).join("") + (list.length > max ? `<tr><td colspan="7" class="help-text">… et ${list.length - max} autres : utilise la recherche.</td></tr>` : "");
 }
 
 // Ouvre WhatsApp avec le message de la liste et note la relance (date) sur cet appareil

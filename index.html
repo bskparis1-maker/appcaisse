@@ -229,7 +229,7 @@
       <input
         type="text"
         id="client-search"
-        placeholder="Rechercher un client (nom ou téléphone)…"
+        placeholder="Rechercher un client (nom, téléphone ou quartier)…"
         oninput="renderClientsTable()"
       />
 
@@ -242,26 +242,13 @@
         </button>
       </div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Nom</th>
-            <th>Téléphone</th>
-            <th>Adresse</th>
-            <th>Date de naissance</th>
-            <th>Total dépensé</th>
-            <th>Dernier achat</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="clients-table-body"></tbody>
-      </table>
 
       <!-- ✅ CLASSEMENTS & RELANCES -->
-      <div class="payment-section" style="margin-top:20px;">
-        <h3>📊 Classements & relances</h3>
+      <div class="payment-section" style="margin-top:12px;">
+        <h3>📊 Clients, classements & relances</h3>
         <div class="dashboard-summary" id="relance-kpis"></div>
         <div class="dashboard-quick" style="margin-top:10px;">
+          <button class="secondary-btn relance-btn" data-cat="tous" onclick="setRelanceCat('tous')">📋 Tous</button>
           <button class="secondary-btn relance-btn" data-cat="vip" onclick="setRelanceCat('vip')">🏆 Meilleurs clients</button>
           <button class="secondary-btn relance-btn" data-cat="dormant" onclick="setRelanceCat('dormant')">😴 Pas commandé depuis 2 mois</button>
           <button class="secondary-btn relance-btn" data-cat="nouveau" onclick="setRelanceCat('nouveau')">🌱 Nouveaux à fidéliser</button>
@@ -284,7 +271,7 @@
               <th>Achats</th>
               <th>Total dépensé</th>
               <th>Dernier achat</th>
-              <th>Relance</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="relance-body"></tbody>
