@@ -423,6 +423,8 @@ function showView(viewName) {
     renderPerfumeBar();
   } else if (viewName === "credit") {
     renderCreditsUI();
+  } else if (viewName === "livraisons") {
+    renderLivraisonsView();
   } else if (viewName === "pro") {
     renderProView();
   }
@@ -2768,7 +2770,7 @@ const DEFAULT_PRO_SETTINGS = {
 };
 
 // Lignes de vente qui ne sont pas des produits (pas de coût de revient)
-const PRO_NON_PRODUCT_ITEMS = ["règlement crédit"];
+const PRO_NON_PRODUCT_ITEMS = ["règlement crédit", "frais de livraison"];
 
 const proState = { period: "month", refDate: null };
 

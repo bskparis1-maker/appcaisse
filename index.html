@@ -22,6 +22,7 @@
       <button onclick="showView('caisse')">Caisse</button>
       <button onclick="showView('ventes')">Ventes</button>
       <button onclick="showView('credit')">Crédit</button> <!-- ✅ AJOUT -->
+      <button onclick="showView('livraisons')">Livraisons 🛵</button>
       <button onclick="showView('clients')">Clients</button>
       <button class="nav-pro" onclick="showView('produits')">Produits 🔒</button>
       <button class="nav-pro" onclick="showView('dashboard')">Tableau de bord 🔒</button>
@@ -573,6 +574,135 @@
       </table>
     </section>
 
+
+    <!-- ============ VUE LIVRAISONS ============ -->
+    <section id="view-livraisons" class="view hidden">
+      <h2>Livraisons 🛵</h2>
+      <div class="liv-sub">
+        <button class="secondary-btn liv-sub-btn" data-vue="liste" onclick="livNav('liste')">📋 Commandes</button>
+        <button class="primary-btn liv-sub-btn" data-vue="form" onclick="livNav('form')">+ Nouvelle commande</button>
+        <button class="secondary-btn liv-sub-btn" data-vue="livreurs" onclick="livNav('livreurs')">Livreurs</button>
+        <button class="secondary-btn liv-sub-btn" data-vue="bilan" onclick="livNav('bilan')">📊 Bilan livraisons</button>
+        <button class="secondary-btn" onclick="livCharger()">↻</button>
+        <span id="liv-etat" class="help-text"></span>
+      </div>
+
+      <!-- Liste -->
+      <div id="liv-liste">
+        <div id="liv-seg" class="dashboard-quick"></div>
+        <div class="liv-filtres">
+          <input type="text" id="liv-rech" placeholder="Rechercher client, téléphone, adresse, n°…" />
+          <select id="liv-f-livreur"></select>
+          <select id="liv-f-source"></select>
+        </div>
+        <div id="liv-liste-cmd"></div>
+      </div>
+
+      <!-- Formulaire -->
+      <div id="liv-form" class="hidden">
+        <div class="payment-section">
+          <h3 id="liv-form-titre">Nouvelle commande à livrer</h3>
+          <input type="hidden" id="liv-id" />
+
+          <label>Source de la commande *</label>
+          <div id="liv-sources" class="dashboard-quick" style="margin-bottom:8px;"></div>
+
+          <div class="form-grid">
+            <label>Client * (liste des clients de la caisse)
+              <input type="text" id="liv-client" list="liv-dl-clients" autocomplete="off" placeholder="Nom du client" />
+            </label>
+            <label>Téléphone *
+              <input type="tel" id="liv-tel" inputmode="tel" placeholder="77 123 45 67" />
+            </label>
+            <label>Adresse / quartier
+              <input type="text" id="liv-adresse" placeholder="Ex : Sacré-Cœur 3, villa 120" />
+            </label>
+            <label>Repère
+              <input type="text" id="liv-repere" placeholder="Ex : à côté de la pharmacie" />
+            </label>
+          </div>
+          <datalist id="liv-dl-clients"></datalist>
+          <p class="help-text">Si le client n'existe pas encore, il est ajouté automatiquement à l'onglet Clients.</p>
+
+          <h3>Produits *</h3>
+          <div id="liv-lignes"></div>
+          <button type="button" class="secondary-btn" onclick="livAjouterLigne()">+ Ajouter un produit</button>
+
+          <div class="form-grid" style="margin-top:10px;">
+            <label>Frais de livraison payés par le client (FCFA)
+              <input type="number" id="liv-frais" min="0" value="0" />
+            </label>
+            <label>Payé au livreur (FCFA) → Frais, caisse
+              <input type="number" id="liv-cout" min="0" value="0" />
+            </label>
+            <label>Livraison prévue le
+              <input type="date" id="liv-date" />
+            </label>
+            <label>Paiement
+              <select id="liv-paiement">
+                <option>Espèces à la livraison</option>
+                <option>Wave</option>
+                <option>Orange Money</option>
+                <option>Déjà payé en boutique</option>
+              </select>
+            </label>
+            <label>Livreur
+              <select id="liv-livreur"></select>
+            </label>
+            <label>Note pour le livreur
+              <input type="text" id="liv-note" placeholder="Ex : appeler avant d'arriver" />
+            </label>
+          </div>
+          <p class="total-label" id="liv-total"></p>
+          <p class="help-text">Quand la commande sera marquée <strong>Livrée</strong> : la vente est ajoutée à la caisse, le stock diminue
+            et le montant « payé au livreur » est ajouté aux Frais (retiré de la caisse).
+            « Déjà payé en boutique » = la vente a déjà été passée en caisse, elle n'est pas comptée 2 fois.</p>
+          <button class="primary-btn" id="liv-btn-save" onclick="livEnregistrer()">💾 Enregistrer la commande</button>
+          <button class="secondary-btn" onclick="livViderForm();livNav('liste')">Annuler</button>
+        </div>
+      </div>
+
+      <!-- Livreurs -->
+      <div id="liv-livreurs" class="hidden">
+        <div class="payment-section">
+          <h3>➕ Ajouter un livreur</h3>
+          <div class="inline-form">
+            <input type="text" id="liv-l-nom" placeholder="Nom" />
+            <input type="tel" id="liv-l-tel" placeholder="Téléphone" />
+            <button class="primary-btn" onclick="livAjouterLivreur()">Ajouter</button>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr><th>Livreur</th><th>En cours</th><th>Livrées aujourd'hui</th><th>Payé aujourd'hui</th><th>Espèces à remettre</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="liv-livreurs-body"></tbody>
+        </table>
+        <p class="help-text">« Espèces à remettre » = commandes payées en espèces, livrées aujourd'hui : l'argent que le livreur doit ramener.</p>
+      </div>
+
+      <!-- Bilan -->
+      <div id="liv-bilan" class="hidden">
+        <div class="dashboard-quick">
+          <button class="secondary-btn liv-period-btn" data-period="day" onclick="livSetPeriode('day')">Aujourd'hui</button>
+          <button class="secondary-btn liv-period-btn" data-period="week" onclick="livSetPeriode('week')">Cette semaine</button>
+          <button class="secondary-btn liv-period-btn" data-period="month" onclick="livSetPeriode('month')">Ce mois</button>
+          <button class="secondary-btn liv-period-btn" data-period="year" onclick="livSetPeriode('year')">Cette année</button>
+        </div>
+        <div class="dashboard-summary" id="liv-kpis"></div>
+        <h3>D'où viennent les commandes</h3>
+        <table>
+          <thead><tr><th>Source</th><th>Commandes</th><th>%</th><th>Livrées</th><th>CA livré</th></tr></thead>
+          <tbody id="liv-sources-body"></tbody>
+        </table>
+        <h3>Par quartier</h3>
+        <table>
+          <thead><tr><th>Zone</th><th>Livraisons</th><th>Montant</th></tr></thead>
+          <tbody id="liv-zones-body"></tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- ============ VUE BAR À PARFUM ============ -->
     <section id="view-bar-parfum" class="view hidden">
       <h2>Bar à parfum</h2>
@@ -805,6 +935,7 @@
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="app.js"></script>
+  <script src="livraisons.js"></script>
 
   <!-- MODALE AJOUT / MODIF CLIENT -->
   <div id="client-form-modal" class="modal hidden">
