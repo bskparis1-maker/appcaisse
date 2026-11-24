@@ -217,6 +217,7 @@ function livRendreListe() {
           ${!livree ? `<button class="primary-btn small-btn" onclick="livLivree(${id})">✅ Livrée</button>` : ""}
           ${!livree ? `<select onchange="livStatut(${id},this.value)">${statuts}</select>` : ""}
           ${!livree ? `<select onchange="livChangerLivreur(${id},this.value)">${livs}</select>` : ""}
+          <button class="secondary-btn small-btn" onclick="livTicket(${id})">🧾 Ticket</button>
           ${wa ? `<button class="secondary-btn small-btn" onclick="livWhatsappClient(${id})">💬 Client</button>` : ""}
           ${c["Livreur"] ? `<button class="secondary-btn small-btn" onclick="livEnvoyerLivreur(${id})">💬 Livreur</button>` : ""}
           ${!livree ? `<button class="secondary-btn small-btn" onclick="livModifier(${id})">✏️ Modifier</button>` : ""}
@@ -358,6 +359,45 @@ async function livLivree(id) {
   loadDashboardStats?.();
   refreshProIfVisible();
   await livCharger(true);
+}
+
+// ✅ Bon de livraison (même modèle que le ticket de caisse)
+function livTicket(id) {
+  const c = livParId(id);
+  if (!c) return;
+  const frais = Number(c["Frais livraison"]) || 0;
+  const clientPaie = livPayeur(c) === "client";
+  const dejaPaye = c["Payé"] === "Oui" || !livMethod(c["Paiement"]);
+  const prevue = /^\d{4}-\d{2}-\d{2}$/.test(c["Livraison prévue"] || "") ? fmtDateFr(c["Livraison prévue"]) : c["Livraison prévue"];
+  const encaisser = dejaPaye
+    ? (clientPaie && frais ? `<div class="encadre">✅ PRODUITS DÉJÀ PAYÉS<br>Livraison à payer au livreur : ${fmt(frais)} F</div>` : `<div class="encadre">✅ DÉJÀ PAYÉ</div>`)
+    : `<div class="encadre">À ENCAISSER : ${fmt(c["Total"])} FCFA` +
+      (clientPaie && frais ? `<br><span style="font-weight:600">dont livraison ${fmt(frais)} F pour le livreur</span>` : "") + `</div>`;
+  openTicketWindow(buildTicketHtml({
+    titre: "BON DE LIVRAISON",
+    numero: c["ID"],
+    date: String(c["Créée le"] || "").replace(" ", "T"),
+    infos: [
+      ["Client", c["Client"]],
+      ["Téléphone", c["Téléphone"]],
+      ["Adresse", c["Adresse"]],
+      ["Repère", c["Repère"]],
+      ["Livraison prévue", prevue],
+      ["Livreur", c["Livreur"]],
+      ["Statut", c["Statut"]],
+      ["Note", c["Note"]]
+    ],
+    lignes: livProduits(c).map((l) => ({ nom: l.nom, qte: l.qte, prix: l.prix })),
+    recap: [
+      ["Produits", fmt(c["Sous-total"]) + " F"],
+      [clientPaie ? "Livraison (payée au livreur)" : "Livraison", fmt(frais) + " F"]
+    ],
+    totalLabel: "TOTAL",
+    total: c["Total"],
+    apresTotal: `<div class="row small"><span>Paiement</span><span>${proEscape(c["Paiement"])}</span></div>` + encaisser,
+    bloc: ticketFideliteHtml(c["ID client"]),
+    noteBas: `<div class="signature"><div>Signature client</div><div>Livreur</div></div>`
+  }));
 }
 
 function livMessageClient(c) {
@@ -597,12 +637,13 @@ async function livEnregistrer() {
   btn.textContent = "⏳ Enregistrement…";
   try {
     const r = await livApi("save", { commande });
-    alert(`✅ Commande ${r.id} enregistrée.`);
+    const veutTicket = confirm(`✅ Commande ${r.id} enregistrée.\n\nGénérer le bon de livraison (ticket) ?`);
     $("liv-id").value = "";
     livViderForm();
     liv.vue = "liste";
     liv.filtre = "Actives";
     await livCharger(true);
+    if (veutTicket) livTicket(r.id);
   } catch (e) {
     alert("⚠️ " + e.message);
   } finally {

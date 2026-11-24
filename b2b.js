@@ -408,6 +408,7 @@ async function b2bEnregistrerDepot() {
     b2bBougerStock(lignes, -1, `Dépôt-vente ${c["Établissement"]} (${id})`);
     document.getElementById("b2b-dep-form").classList.add("hidden");
     b2bRendre();
+    if (confirm("✅ Dépôt enregistré.\n\nGénérer le bon de dépôt ?")) b2bTicketDepot(id);
   } catch (e) { alert("⚠️ " + e.message); }
 }
 
@@ -445,7 +446,8 @@ function b2bRendreDepots() {
           <button class="primary-btn" onclick="b2bValiderPoint(${id})">✅ Valider le point</button>
           <button class="secondary-btn" onclick="b2b.pointDepot=null;b2bRendreDepots()">Annuler</button>
         </div>`
-        : d["Statut"] !== "Clôturé" ? `<div class="liv-actions"><button class="primary-btn small-btn" onclick="b2bOuvrirPoint(${id})">🧮 Faire le point (vendus / invendus)</button></div>` : ""}
+        : `<div class="liv-actions">${d["Statut"] !== "Clôturé" ? `<button class="primary-btn small-btn" onclick="b2bOuvrirPoint(${id})">🧮 Faire le point (vendus / invendus)</button>` : ""}
+             <button class="secondary-btn small-btn" onclick="b2bTicketDepot(${id})">🧾 Bon de dépôt</button></div>`}
     </div>`;
   }).join("");
   if (b2b.pointDepot) { b2bRemplirModes("pt-mode"); b2bCalculerPoint(); }
@@ -508,6 +510,9 @@ async function b2bValiderPoint(id) {
     b2b.pointDepot = null;
     b2bRendre();
     refreshProIfVisible();
+    const venteDuPoint = save.find((x) => x.feuille === "B2B_Ventes");
+    if (venteDuPoint && confirm("✅ Point enregistré.\n\nGénérer la facture des produits vendus ?")) b2bTicketVente(venteDuPoint.obj.ID);
+    else if (!venteDuPoint && confirm("✅ Point enregistré.\n\nGénérer le bon de dépôt à jour ?")) b2bTicketDepot(d.ID);
   } catch (e) { alert("⚠️ " + e.message); }
 }
 
@@ -551,6 +556,7 @@ async function b2bEnregistrerCommande() {
     b2bBougerStock(lignes, -1, `Vente en gros ${c["Établissement"]} (${venteId})`);
     document.getElementById("b2b-cmd-form").classList.add("hidden");
     b2bRendre();
+    if (confirm("✅ Commande enregistrée.\n\nGénérer la facture ?")) b2bTicketVente(venteId);
   } catch (e) { alert("⚠️ " + e.message); }
 }
 
@@ -566,8 +572,80 @@ function b2bRendreCommandes() {
       <td>${fmt(v["Total"])} FCFA</td>
       <td>${fmt(v["Payé"])} FCFA</td>
       <td class="${b2bNum(v["Reste"]) > 0 ? "text-neg" : "text-pos"}">${b2bNum(v["Reste"]) > 0 ? fmt(v["Reste"]) + " FCFA" : "✅ Payé"}</td>
-      <td>${b2bNum(v["Reste"]) > 0 ? `<button class="small-btn" onclick="b2bOuvrirPaiement({venteId:${b2bJs(v.ID)}})">💵 Encaisser</button>` : ""}</td>
+      <td><button class="small-btn" onclick="b2bTicketVente(${b2bJs(v.ID)})">🧾 Ticket</button>
+        ${b2bNum(v["Reste"]) > 0 ? `<button class="small-btn" onclick="b2bOuvrirPaiement({venteId:${b2bJs(v.ID)}})">💵 Encaisser</button>` : ""}</td>
     </tr>`).join("") : `<tr><td colspan="7">Aucune vente B2B.</td></tr>`;
+}
+
+// =====================================================================
+// TICKETS B2B (même modèle que le ticket de caisse)
+// =====================================================================
+function b2bInfosEtab(clientId, nomSecours) {
+  const c = b2bClient(clientId) || {};
+  return [
+    ["Établissement", c["Établissement"] || nomSecours],
+    ["Responsable", c["Responsable"]],
+    ["Téléphone", c["Téléphone"]],
+    ["Adresse", c["Adresse"]]
+  ];
+}
+
+// Facture d'une vente B2B (commande directe ou point de dépôt)
+function b2bTicketVente(venteId) {
+  const v = b2b.data.B2B_Ventes.find((x) => String(x.ID) === String(venteId));
+  if (!v) return;
+  const pays = b2b.data.B2B_Paiements.filter((p) => String(p["Vente ID"]) === String(v.ID))
+    .sort((a, b) => String(a["Date"]).localeCompare(String(b["Date"])));
+  const reste = b2bNum(v["Reste"]);
+  const historique = pays.length
+    ? pays.map((p) => `<div class="row small"><span>${b2bDateFr(p["Date"])} • ${proEscape(b2bModeLabel(p["Mode"]))}</span><span>${fmt(p["Montant"])} F</span></div>`).join("")
+    : `<div class="small muted">Aucun paiement reçu</div>`;
+  openTicketWindow(buildTicketHtml({
+    titre: v["Type"] === "Commande" ? "FACTURE – VENTE EN GROS" : "FACTURE – DÉPÔT-VENTE",
+    numero: v.ID,
+    date: v["Date"],
+    infos: [...b2bInfosEtab(v["Client ID"], v["Établissement"]), ["Dépôt", v["Dépôt ID"]], ["Note", v["Note"]]],
+    lignes: b2bProduits(v).map((l) => ({ nom: l.nom, qte: l.qte, prix: l.prix })),
+    recap: [],
+    totalLabel: "TOTAL",
+    total: v["Total"],
+    apresTotal: `<div class="row"><span>Déjà payé</span><span>${fmt(v["Payé"])} F</span></div>` +
+      (reste > 0 ? `<div class="encadre">RESTE À PAYER : ${fmt(reste)} FCFA</div>` : `<div class="encadre">✅ FACTURE RÉGLÉE</div>`),
+    bloc: `<div class="small fort">Paiements reçus</div>${historique}`,
+    noteBas: `<div class="signature"><div>L'établissement</div><div>BSK</div></div>`,
+    pied: `<div class="merci">Merci pour votre confiance 🧡</div>`
+  }));
+}
+
+// Bon de dépôt-vente : produits laissés chez l'établissement et où on en est
+function b2bTicketDepot(depotId) {
+  const d = b2b.data.B2B_Depots.find((x) => String(x.ID) === String(depotId));
+  if (!d) return;
+  const lignes = b2bProduits(d);
+  const vendus = lignes.reduce((s, l) => s + b2bNum(l.vendus), 0);
+  const rendus = lignes.reduce((s, l) => s + b2bNum(l.retournes), 0);
+  const restant = lignes.reduce((s, l) => s + b2bNum(l.qte) - b2bNum(l.vendus) - b2bNum(l.retournes), 0);
+  const valeurRestante = lignes.reduce((s, l) => s + (b2bNum(l.qte) - b2bNum(l.vendus) - b2bNum(l.retournes)) * b2bNum(l.prix), 0);
+  const detail = (vendus || rendus) ? lignes.map((l) => {
+    const r = b2bNum(l.qte) - b2bNum(l.vendus) - b2bNum(l.retournes);
+    return `<div class="row small"><span>${proEscape(l.nom)}</span><span>vendu ${b2bNum(l.vendus)} • rendu ${b2bNum(l.retournes)} • reste ${r}</span></div>`;
+  }).join("") : "";
+  openTicketWindow(buildTicketHtml({
+    titre: "BON DE DÉPÔT-VENTE",
+    numero: d.ID,
+    date: d["Date"],
+    infos: [...b2bInfosEtab(d["Client ID"], d["Établissement"]), ["Statut", d["Statut"]], ["Note", d["Note"]]],
+    lignes: lignes.map((l) => ({ nom: l.nom, qte: l.qte, prix: l.prix })),
+    recap: [],
+    totalLabel: "VALEUR",
+    total: lignes.reduce((s, l) => s + b2bNum(l.qte) * b2bNum(l.prix), 0),
+    apresTotal: `<div class="small muted">Prix professionnels BSK. Les produits vendus sont facturés au point de dépôt, les invendus sont repris.</div>` +
+      ((vendus || rendus) ? `<div class="row small"><span>Vendus</span><span>${vendus} pièce(s)</span></div><div class="row small"><span>Rendus</span><span>${rendus} pièce(s)</span></div>` : "") +
+      `<div class="encadre">RESTENT CHEZ VOUS : ${restant} pièce(s)<br>${fmt(valeurRestante)} FCFA</div>`,
+    bloc: detail ? `<div class="small fort">Détail</div>${detail}` : "",
+    noteBas: `<div class="signature"><div>L'établissement</div><div>BSK</div></div>`,
+    pied: `<div class="merci">Merci pour votre confiance 🧡</div>`
+  }));
 }
 
 // =====================================================================

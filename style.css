@@ -1312,3 +1312,9 @@ tr.relance-faite td { opacity: 0.6; }
 }
 .client-picker-list button:hover { background: #f9fafb; }
 .client-picker-list .client-picker-new { color: #c2410c; font-weight: 600; }
+
+/* ✅ Ticket affiché dans l'app */
+.ticket-overlay-content { width: min(440px, 96vw); max-height: 94vh; display: flex; flex-direction: column; padding: 10px; }
+.ticket-overlay-actions { display: flex; gap: 8px; justify-content: flex-end; margin-bottom: 6px; }
+.ticket-overlay-actions button { margin: 0; }
+#ticket-overlay-frame { width: 100%; height: 78vh; border: 1px solid #e5e7eb; border-radius: 10px; background: #f3f4f6; }

@@ -1276,78 +1276,47 @@ const BOUTIQUE = {
   site: "bskparfum.com"
 };
 
-function openReceiptWindow(sale) {
+// ---------- Modèle commun : ticket de caisse, bon de livraison, bon de dépôt, facture B2B ----------
+// o = { titre, numero, date, infos: [[label, valeur]], lignes: [{ nom, qte, prix }], recap: [[label, valeur, cls]],
+//       totalLabel, total, apresTotal (html), bloc (html), pied (html), noteBas (html) }
+function buildTicketHtml(o) {
   const esc = (v) => proEscape(v);
-  const d = new Date(sale.date);
+  const d = new Date(o.date || Date.now());
   const dateStr = isNaN(d.getTime()) ? "" : d.toLocaleDateString("fr-FR");
   const heureStr = isNaN(d.getTime()) ? "" : d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-  const numero = String(sale.id || "").replace(/\D/g, "").slice(-6) || "—";
   const logo = new URL("logo.png", window.location.href).href;
-
-  // lignes de produits
   let nbArticles = 0;
-  const lignes = (sale.items || []).map((item) => {
-    const qty = Number(item.qty) || 0;
-    const pu = Number(item.price) || 0;
+  const lignes = (o.lignes || []).map((l) => {
+    const qty = Number(l.qte) || 0;
+    const pu = Number(l.prix) || 0;
     nbArticles += qty;
-    return `
-      <div class="item">
-        <div class="item-nom">${esc(item.name || "Produit")}</div>
-        <div class="item-calc"><span>${qty} × ${fmt(pu)}</span><span>${fmt(pu * qty)} F</span></div>
-      </div>`;
+    return `<div class="item"><div class="item-nom">${esc(l.nom || "Produit")}</div>
+      <div class="item-calc"><span>${qty} × ${fmt(pu)}</span><span>${fmt(pu * qty)} F</span></div></div>`;
   }).join("");
-
-  // remises
-  const sousTotal = Number(sale.baseTotal) || (sale.items || []).reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.qty) || 0), 0) || Number(sale.total) || 0;
-  const remises = [
-    ["Remise promo", Number(sale.promoDiscount) || 0],
-    ["Remise", Number(sale.manualDiscount) || 0],
-    ["Remise anniversaire 🎂", Number(sale.birthdayDiscount) || 0]
-  ].filter(([, v]) => v > 0);
-  const totalRemises = remises.reduce((s, [, v]) => s + v, 0) || (Number(sale.discountAmount) || 0);
-  const remisesHtml = remises.map(([l, v]) => `<div class="row small"><span>${l}</span><span>- ${fmt(v)} F</span></div>`).join("") +
-    (sale.discountReason && totalRemises ? `<div class="row small muted"><span>${esc(sale.discountReason)}</span></div>` : "");
-
-  // client + fidélité (-10 % à partir de 100 000 F d'achats cumulés)
-  let clientHtml = "";
-  const client = sale.clientId ? (clients || []).find((c) => String(c.id) === String(sale.clientId)) : null;
-  if (sale.clientName || client) {
-    const nom = client ? client.name : sale.clientName;
-    let fidelite = "";
-    if (client && typeof getClientStats === "function") {
-      const cumul = getClientStats(client).total;
-      const reste = FIDELITE_OBJECTIF - cumul;
-      fidelite = reste > 0
-        ? `<div class="fidelite">⭐ Vos achats cumulés : <strong>${fmt(cumul)} F</strong><br>Plus que <strong>${fmt(reste)} F</strong> pour profiter de -10 % 🎁</div>`
-        : `<div class="fidelite">⭐ Vos achats cumulés : <strong>${fmt(cumul)} F</strong><br>Vous avez droit à votre réduction de -10 % 🎁</div>`;
-    }
-    clientHtml = `<div class="line"></div>
-      <div class="row small"><span>Client</span><span>${esc(nom)}</span></div>
-      ${fidelite}`;
-  } else {
-    clientHtml = `<div class="line"></div>
-      <div class="fidelite">📲 Donnez votre numéro à chaque achat : vos achats sont cumulés pour -10 % et votre remise anniversaire 🎁</div>`;
-  }
-
+  const infos = (o.infos || []).filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== "")
+    .map(([l, v]) => `<div class="row small"><span class="muted">${esc(l)}</span><span class="right">${esc(v)}</span></div>`).join("");
+  const recap = (o.recap || []).map(([l, v, cls]) => `<div class="row ${cls || ""}"><span>${esc(l)}</span><span>${v}</span></div>`).join("");
   const qrWa = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=${encodeURIComponent("https://wa.me/" + BOUTIQUE.whatsapp)}`;
   const qrSite = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=${encodeURIComponent("https://" + BOUTIQUE.site)}`;
 
-  const receiptHtml = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ticket ${numero} - ${BOUTIQUE.nom}</title>
+<title>${esc(o.titre || "Ticket")} ${esc(o.numero || "")} - ${BOUTIQUE.nom}</title>
 <style>
   @page { size: 80mm auto; margin: 3mm; }
   * { box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 13px; color: #111; margin: 0; background: #f3f4f6; }
   .ticket { width: 74mm; max-width: 100%; margin: 10px auto; background: #fff; padding: 12px 10px 14px; }
   .center { text-align: center; }
+  .right { text-align: right; }
   .logo { width: 64px; height: 64px; object-fit: cover; border-radius: 14px; }
   h1 { font-size: 22px; letter-spacing: 3px; margin: 4px 0 0; }
   .slogan { font-size: 11px; color: #555; margin-top: 2px; }
   .site { font-size: 14px; font-weight: 700; margin-top: 4px; }
+  .doc-titre { font-size: 15px; font-weight: 800; letter-spacing: 1px; margin-top: 2px; }
   .muted { color: #666; }
   .small { font-size: 11.5px; }
   .line { border-top: 1px dashed #999; margin: 8px 0; }
@@ -1355,10 +1324,14 @@ function openReceiptWindow(sale) {
   .item { margin-bottom: 5px; }
   .item-nom { font-weight: 600; }
   .item-calc { display: flex; justify-content: space-between; color: #333; }
-  .total { display: flex; justify-content: space-between; font-size: 18px; font-weight: 800; margin-top: 4px; }
-  .economie { margin-top: 4px; padding: 4px 6px; border: 1px solid #111; border-radius: 6px; text-align: center; font-size: 12px; font-weight: 700; }
-  .fidelite { font-size: 11.5px; line-height: 1.35; text-align: center; margin-top: 4px; }
+  .total { display: flex; justify-content: space-between; gap: 8px; font-size: 18px; font-weight: 800; margin-top: 4px; }
+  .total span:last-child { white-space: nowrap; }
+  .encadre { margin-top: 6px; padding: 5px 6px; border: 1.5px solid #111; border-radius: 6px; text-align: center; font-size: 12.5px; font-weight: 700; }
+  .fort { font-weight: 800; }
+  .bloc { font-size: 11.5px; line-height: 1.35; text-align: center; margin-top: 4px; }
   .merci { font-size: 15px; font-weight: 700; margin: 10px 0 2px; }
+  .signature { display: flex; justify-content: space-between; gap: 10px; margin-top: 14px; font-size: 11px; }
+  .signature div { flex: 1; border-top: 1px solid #111; padding-top: 3px; text-align: center; margin-top: 26px; }
   .qrs { display: flex; justify-content: center; gap: 14px; margin-top: 8px; }
   .qrs div { font-size: 10px; text-align: center; }
   .qrs img { width: 78px; height: 78px; display: block; margin: 0 auto 2px; }
@@ -1382,23 +1355,24 @@ function openReceiptWindow(sale) {
     </div>
 
     <div class="line"></div>
-    <div class="row small"><span>Ticket N° ${numero}</span><span>${dateStr} ${heureStr}</span></div>
+    ${o.titre ? `<div class="center doc-titre">${esc(o.titre)}</div>` : ""}
+    <div class="row small"><span>N° ${esc(o.numero || "—")}</span><span>${dateStr} ${heureStr}</span></div>
+    ${infos ? `<div class="line"></div>${infos}` : ""}
     <div class="line"></div>
 
     ${lignes}
 
     <div class="line"></div>
     <div class="row small"><span>${nbArticles} article${nbArticles > 1 ? "s" : ""}</span><span></span></div>
-    ${totalRemises ? `<div class="row"><span>Sous-total</span><span>${fmt(sousTotal)} F</span></div>${remisesHtml}` : ""}
-    <div class="total"><span>TOTAL</span><span>${fmt(sale.total)} FCFA</span></div>
-    <div class="row small"><span>Payé par</span><span>${esc(formatPaymentMethod(sale.paymentMethod))}</span></div>
-    ${totalRemises ? `<div class="economie">🎉 Vous avez économisé ${fmt(totalRemises)} FCFA</div>` : ""}
-
-    ${clientHtml}
+    ${recap}
+    <div class="total"><span>${esc(o.totalLabel || "TOTAL")}</span><span>${fmt(o.total)} FCFA</span></div>
+    ${o.apresTotal || ""}
+    ${o.bloc ? `<div class="line"></div>${o.bloc}` : ""}
+    ${o.noteBas || ""}
 
     <div class="line"></div>
     <div class="center">
-      <div class="merci">Merci pour votre achat 🧡</div>
+      ${o.pied || `<div class="merci">Merci pour votre achat 🧡</div>`}
       <div class="small">Commandez en ligne sur <strong>${BOUTIQUE.site}</strong><br>Livraison partout à Dakar 🛵</div>
       <div class="small muted" style="margin-top:4px;">Ouvert de ${BOUTIQUE.horaires}</div>
       <div class="qrs">
@@ -1411,15 +1385,77 @@ function openReceiptWindow(sale) {
   </div>
 </body>
 </html>`;
+}
 
-  const win = window.open("", "_blank", "width=420,height=720");
-  if (!win) {
-    alert("Autorisez les pop-up pour voir le ticket.");
-    return;
-  }
+function openTicketWindow(html) {
+  const win = window.open("", "_blank", "width=420,height=760");
+  if (!win) return openTicketOverlay(html); // pop-up bloquée → ticket affiché dans l'app
   win.document.open();
-  win.document.write(receiptHtml);
+  win.document.write(html);
   win.document.close();
+}
+
+// Ticket affiché par-dessus l'app (quand le navigateur bloque la fenêtre)
+function openTicketOverlay(html) {
+  document.getElementById("ticket-overlay")?.remove();
+  const box = document.createElement("div");
+  box.id = "ticket-overlay";
+  box.className = "modal";
+  box.innerHTML = `<div class="modal-content ticket-overlay-content">
+      <div class="ticket-overlay-actions">
+        <button class="primary-btn" type="button" id="ticket-overlay-print">🖨️ Imprimer</button>
+        <button class="secondary-btn" type="button" id="ticket-overlay-close">Fermer</button>
+      </div>
+      <iframe id="ticket-overlay-frame" title="Ticket"></iframe>
+    </div>`;
+  document.body.appendChild(box);
+  const frame = box.querySelector("iframe");
+  frame.srcdoc = html;
+  box.querySelector("#ticket-overlay-close").onclick = () => box.remove();
+  box.querySelector("#ticket-overlay-print").onclick = () => { try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (e) {} };
+  box.addEventListener("click", (e) => { if (e.target === box) box.remove(); });
+}
+
+// Bloc fidélité (cumul d'achats → -10 % à 100 000 F)
+function ticketFideliteHtml(clientId) {
+  const client = clientId ? (clients || []).find((c) => String(c.id) === String(clientId)) : null;
+  if (!client || typeof getClientStats !== "function") {
+    return `<div class="bloc">📲 Donnez votre numéro à chaque achat : vos achats sont cumulés pour -10 % et votre remise anniversaire 🎁</div>`;
+  }
+  const cumul = getClientStats(client).total;
+  const reste = FIDELITE_OBJECTIF - cumul;
+  return reste > 0
+    ? `<div class="bloc">⭐ Vos achats cumulés : <strong>${fmt(cumul)} F</strong><br>Plus que <strong>${fmt(reste)} F</strong> pour profiter de -10 % 🎁</div>`
+    : `<div class="bloc">⭐ Vos achats cumulés : <strong>${fmt(cumul)} F</strong><br>Vous avez droit à votre réduction de -10 % 🎁</div>`;
+}
+
+// ---------- Ticket de caisse ----------
+function openReceiptWindow(sale) {
+  const lignes = (sale.items || []).map((i) => ({ nom: i.name, qte: i.qty, prix: i.price }));
+  const sousTotal = Number(sale.baseTotal) || lignes.reduce((s, l) => s + (Number(l.prix) || 0) * (Number(l.qte) || 0), 0) || Number(sale.total) || 0;
+  const remises = [
+    ["Remise promo", Number(sale.promoDiscount) || 0],
+    ["Remise", Number(sale.manualDiscount) || 0],
+    ["Remise anniversaire 🎂", Number(sale.birthdayDiscount) || 0]
+  ].filter(([, v]) => v > 0);
+  const totalRemises = remises.reduce((s, [, v]) => s + v, 0) || (Number(sale.discountAmount) || 0);
+  const recap = totalRemises
+    ? [["Sous-total", fmt(sousTotal) + " F"], ...remises.map(([l, v]) => [l, "- " + fmt(v) + " F", "small"])]
+    : [];
+  const client = sale.clientId ? (clients || []).find((c) => String(c.id) === String(sale.clientId)) : null;
+  openTicketWindow(buildTicketHtml({
+    titre: "",
+    numero: String(sale.id || "").replace(/\D/g, "").slice(-6),
+    date: sale.date,
+    lignes,
+    recap,
+    total: sale.total,
+    apresTotal: `<div class="row small"><span>Payé par</span><span>${proEscape(formatPaymentMethod(sale.paymentMethod))}</span></div>` +
+      (sale.discountReason && totalRemises ? `<div class="small muted">${proEscape(sale.discountReason)}</div>` : "") +
+      (totalRemises ? `<div class="encadre">🎉 Vous avez économisé ${fmt(totalRemises)} FCFA</div>` : ""),
+    bloc: ((sale.clientName || client) ? `<div class="row small"><span>Client</span><span>${proEscape(client ? client.name : sale.clientName)}</span></div>` : "") +
+      ticketFideliteHtml(sale.clientId)
+  }));
 }
 
 function printTicket() {
