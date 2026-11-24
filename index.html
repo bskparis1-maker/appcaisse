@@ -452,15 +452,11 @@
           <label>Catégorie : <select id="expense-category"></select></label>
           <label>Motif de la dépense : <input type="text" id="expense-label" placeholder="Ex : taxi livraison, facture Senelec..." /></label>
           <label>Montant (FCFA) : <input type="number" id="expense-amount" min="0" placeholder="0" /></label>
-          <label>Payé avec :
-            <select id="expense-source">
-              <option value="caisse">💵 Argent de la caisse</option>
-              <option value="coffre">🔐 Argent du coffre (code demandé)</option>
-            </select>
-          </label>
+          <!-- ✅ les frais sont toujours payés avec la caisse (le coffre ne va plus dans Frais) -->
+          <select id="expense-source" class="hidden"><option value="caisse">caisse</option></select>
         </div>
         <button class="primary-btn" onclick="addExpense()">Valider la dépense</button>
-        <p class="help-text">Le montant est retiré automatiquement de la caisse ou du coffre. Pour le coffre, le code est demandé.</p>
+        <p class="help-text">Le montant est retiré automatiquement de la caisse. Les sorties du coffre ne sont pas des frais : elles restent dans l'historique du coffre.</p>
       </div>
 
       <h3>Mes plus grandes dépenses</h3>

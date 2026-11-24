@@ -1751,6 +1751,12 @@ async function addExpense() {
   return expense;
 }
 
+// ✅ Frais = uniquement les dépenses sorties de la caisse.
+// Les anciennes dépenses « [coffre] » (décaissements) restent dans Google Sheets mais ne sont plus affichées ni comptées.
+function fraisCaisse() {
+  return (expenses || []).filter((e) => parseExpense(e).source !== "coffre");
+}
+
 // Crée + enregistre une dépense (utilisé par l'onglet Frais ET par le coffre)
 // Le libellé est enregistré sous la forme « Catégorie : motif [caisse] » :
 // comme ça la catégorie et la source restent même après rechargement depuis Google Sheets.
@@ -1916,7 +1922,7 @@ function renderExpensesTable() {
   if (startInput && startInput.value) start = new Date(startInput.value + "T00:00:00");
   if (endInput && endInput.value) end = new Date(endInput.value + "T23:59:59");
 
-  const sorted = [...expenses].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const sorted = fraisCaisse().sort((a, b) => new Date(b.date) - new Date(a.date));
   const filtered = sorted
     .filter((entry) => {
       const d = new Date(entry.date);
@@ -1991,7 +1997,7 @@ function renderExpensesPie() {
 
   const byCat = {};
   let total = 0;
-  (expenses || []).forEach((e) => {
+  fraisCaisse().forEach((e) => {
     const k = dateKeyOf(e.date);
     if (!k || k < from || k > to) return;
     const cat = parseExpense(e).category;
@@ -2962,7 +2968,7 @@ function getSalesForDate(dateStr) {
 }
 
 function getExpensesForDate(dateStr) {
-  return (expenses || []).filter(e => String(e.date || "").slice(0, 10) === dateStr);
+  return fraisCaisse().filter(e => String(e.date || "").slice(0, 10) === dateStr);
 }
 
 function getUniqueClientsCountForDate(dateStr) {
@@ -3402,7 +3408,7 @@ function computePro(period, refStr) {
   });
 
   // 3) Frais de l'onglet Frais (optionnel)
-  const periodExpenses = (expenses || [])
+  const periodExpenses = fraisCaisse()
     .filter((e) => inRange(e.date))
     .reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const deductedExpenses = proSettings.includeExpenses ? periodExpenses : 0;
@@ -4084,21 +4090,19 @@ function openWithdrawModal() {
   const coffre = computeCoffreBalance();
   openMoneyModal({
     title: "Décaisser du coffre",
-    info: `Disponible dans le coffre : <strong>${fmt(coffre)} FCFA</strong><br>Ce décaissement sera ajouté automatiquement aux <strong>Frais</strong>.`,
+    info: `Disponible dans le coffre : <strong>${fmt(coffre)} FCFA</strong><br>Le décaissement reste dans l'historique du coffre (il n'apparaît pas dans Frais).`,
     amountLabel: "Montant à sortir (FCFA)",
-    showCategory: true,
+    showCategory: false,
     motifLabel: "Motif (obligatoire)",
     motifPlaceholder: "Ex : paiement fournisseur, loyer de novembre…",
     confirmLabel: "Décaisser",
-    onConfirm: ({ amount, motif, category }) => {
+    onConfirm: ({ amount, motif }) => {
       if (!(amount > 0)) return "Indique un montant valide.";
       if (amount > coffre) return `Le coffre ne contient que ${fmt(coffre)} FCFA.`;
       if (motif.length < 3) return "Le motif est obligatoire pour tout décaissement.";
-      const expense = createExpense({ category, motif, amount, source: "coffre" });
-      addVaultMove({ at: expense.date, type: "withdraw", amount, motif, category, expenseId: String(expense.id) });
-      renderExpensesTable();
+      addVaultMove({ at: new Date().toISOString(), type: "withdraw", amount, motif, category: "" });
       refreshProIfVisible();
-      alert(`✅ ${fmt(amount)} FCFA sortis du coffre et ajoutés aux frais.`);
+      alert(`✅ ${fmt(amount)} FCFA sortis du coffre.`);
       return null;
     }
   });
@@ -4205,7 +4209,7 @@ function renderCoffreView() {
   const rows = coffreMoves.map((m) => {
     let label, amount;
     if (m.type === "deposit") { label = String(m.motif || "").indexOf("[B2B]") === 0 ? "⬇️ Dépôt depuis la caisse B2B" : "⬇️ Dépôt depuis la caisse"; amount = Number(m.amount); }
-    else if (m.type === "withdraw") { label = `⬆️ Décaissement (${proEscape(m.category || "Autre")})`; amount = -Number(m.amount); }
+    else if (m.type === "withdraw") { label = m.category ? `⬆️ Décaissement (${proEscape(m.category)})` : "⬆️ Décaissement"; amount = -Number(m.amount); }
     else { label = "⚖️ Ajustement"; amount = Number(m.delta); }
     running += amount;
     return `<tr>
@@ -4596,7 +4600,7 @@ function computeBilan(period, refStr) {
   const pro = computePro(period, refStr);
 
   // Dépenses
-  const periodExpenses = (expenses || []).filter((e) => inRange(e.date));
+  const periodExpenses = fraisCaisse().filter((e) => inRange(e.date));
   const expTotal = periodExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const expByCat = {};
   periodExpenses.forEach((e) => {
@@ -4846,7 +4850,7 @@ function renderBilanChart(b) {
   };
   const map = new Map(buckets.map((x) => [x.key, x]));
   b.periodSales.forEach((s) => { const k = map.get(bucketOf(s.date)); if (k) k.ca += Number(s.total) || 0; });
-  (expenses || []).forEach((e) => {
+  fraisCaisse().forEach((e) => {
     const key = dateKeyOf(e.date);
     if (!key || key < b.from || key > b.to) return;
     const k = map.get(bucketOf(e.date));
