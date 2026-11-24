@@ -253,6 +253,9 @@ function fetchSalesFromSheet() {
             paymentMethod: info.paymentMethod || "cash",
             discountAmount: Number(info.discountAmount) || 0,
             discountReason: info.discountReason || "",
+            promoDiscount: Number(info.promoDiscount) || 0,
+            manualDiscount: Number(info.manualDiscount) || 0,
+            birthdayDiscount: Number(info.birthdayDiscount) || 0,
             clientId: info.clientId || "",
             clientName: info.clientName || "",
             clientPhone: info.clientPhone || ""
@@ -1431,14 +1434,25 @@ function ticketFideliteHtml(clientId) {
 
 // ---------- Ticket de caisse ----------
 function openReceiptWindow(sale) {
-  const lignes = (sale.items || []).map((i) => ({ nom: i.name, qte: i.qty, prix: i.price }));
+  const items = sale.items || [];
+  const sansPrix = items.length && items.every((i) => !Number(i.price));
+  const lignes = items.map((i) => {
+    let prix = Number(i.price) || 0;
+    if (sansPrix) {
+      // anciennes ventes sans prix unitaire enregistré
+      if (items.length === 1 && Number(i.qty)) prix = Math.round((Number(sale.baseTotal) || (Number(sale.total) || 0) + (Number(sale.discountAmount) || 0)) / Number(i.qty));
+      else prix = getCatalogPrice(i.name);
+    }
+    return { nom: i.name, qte: i.qty, prix };
+  });
   const sousTotal = Number(sale.baseTotal) || lignes.reduce((s, l) => s + (Number(l.prix) || 0) * (Number(l.qte) || 0), 0) || Number(sale.total) || 0;
   const remises = [
     ["Remise promo", Number(sale.promoDiscount) || 0],
     ["Remise", Number(sale.manualDiscount) || 0],
     ["Remise anniversaire 🎂", Number(sale.birthdayDiscount) || 0]
   ].filter(([, v]) => v > 0);
-  const totalRemises = remises.reduce((s, [, v]) => s + v, 0) || (Number(sale.discountAmount) || 0);
+  if (!remises.length && Number(sale.discountAmount) > 0) remises.push(["Remise", Number(sale.discountAmount)]);
+  const totalRemises = remises.reduce((s, [, v]) => s + v, 0);
   const recap = totalRemises
     ? [["Sous-total", fmt(sousTotal) + " F"], ...remises.map(([l, v]) => [l, "- " + fmt(v) + " F", "small"])]
     : [];
@@ -1456,6 +1470,13 @@ function openReceiptWindow(sale) {
     bloc: ((sale.clientName || client) ? `<div class="row small"><span>Client</span><span>${proEscape(client ? client.name : sale.clientName)}</span></div>` : "") +
       ticketFideliteHtml(sale.clientId)
   }));
+}
+
+// ✅ Réimprimer le ticket d'une vente déjà enregistrée (onglet Ventes)
+function printSaleTicket(saleId) {
+  const sale = (sales || []).find((s) => String(s.id) === String(saleId));
+  if (!sale) return alert("Vente introuvable.");
+  openReceiptWindow(sale);
 }
 
 function printTicket() {
@@ -2718,6 +2739,7 @@ function updateSalesViewForSelectedDate() {
       <td>
         ${clientLabel}<br>
         <!-- ✅ IMPORTANT: id en string -->
+        <button class="secondary-btn" onclick="printSaleTicket('${sale.id}')">🧾 Ticket</button>
         <button class="danger-btn" onclick="deleteSale('${sale.id}')">Supprimer</button>
       </td>
     `;
