@@ -1266,132 +1266,153 @@ function confirmSale() {
   alert("Vente enregistrée !");
 }
 // ================== TICKET DE CAISSE ==================
+// ✅ Ticket de caisse (format imprimante ticket 80 mm, aussi lisible sur téléphone)
+const BOUTIQUE = {
+  nom: "BSK",
+  adresse: "Grand Dakar – Garage Casamance",
+  telephone: "77 876 92 01",
+  whatsapp: "221778769201",
+  horaires: "12h à 22h (lundi → samedi)",
+  site: "bskparfum.com"
+};
+
 function openReceiptWindow(sale) {
-  const boutiqueName = "BSK";
-  const dateStr = new Date(sale.date).toLocaleString("fr-FR");
+  const esc = (v) => proEscape(v);
+  const d = new Date(sale.date);
+  const dateStr = isNaN(d.getTime()) ? "" : d.toLocaleDateString("fr-FR");
+  const heureStr = isNaN(d.getTime()) ? "" : d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const numero = String(sale.id || "").replace(/\D/g, "").slice(-6) || "—";
+  const logo = new URL("logo.png", window.location.href).href;
 
-  let rowsHtml = "";
-  (sale.items || []).forEach((item) => {
-    const name = item.name || "Produit";
-    const unitPrice = Number(item.price) || 0;
+  // lignes de produits
+  let nbArticles = 0;
+  const lignes = (sale.items || []).map((item) => {
     const qty = Number(item.qty) || 0;
-    const lineTotal = unitPrice * qty;
+    const pu = Number(item.price) || 0;
+    nbArticles += qty;
+    return `
+      <div class="item">
+        <div class="item-nom">${esc(item.name || "Produit")}</div>
+        <div class="item-calc"><span>${qty} × ${fmt(pu)}</span><span>${fmt(pu * qty)} F</span></div>
+      </div>`;
+  }).join("");
 
-    rowsHtml += `
-      <tr>
-        <td>${name}</td>
-        <td style="text-align:center;">${qty}</td>
-        <td style="text-align:right;">${unitPrice} FCFA</td>
-        <td style="text-align:right;">${lineTotal} FCFA</td>
-      </tr>
-    `;
-  });
+  // remises
+  const sousTotal = Number(sale.baseTotal) || (sale.items || []).reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.qty) || 0), 0) || Number(sale.total) || 0;
+  const remises = [
+    ["Remise promo", Number(sale.promoDiscount) || 0],
+    ["Remise", Number(sale.manualDiscount) || 0],
+    ["Remise anniversaire 🎂", Number(sale.birthdayDiscount) || 0]
+  ].filter(([, v]) => v > 0);
+  const totalRemises = remises.reduce((s, [, v]) => s + v, 0) || (Number(sale.discountAmount) || 0);
+  const remisesHtml = remises.map(([l, v]) => `<div class="row small"><span>${l}</span><span>- ${fmt(v)} F</span></div>`).join("") +
+    (sale.discountReason && totalRemises ? `<div class="row small muted"><span>${esc(sale.discountReason)}</span></div>` : "");
 
-  const baseTotal = sale.baseTotal || sale.total;
-  const promoDiscount = sale.promoDiscount || 0;
-  const manualDiscount = sale.manualDiscount || 0;
-  const birthdayDiscount = sale.birthdayDiscount || 0;
-  const discountReason = sale.discountReason || "";
-
-  let discountRowsHtml = `
-    <tr class="discount-row">
-      <td colspan="3" style="text-align:right;">Sous-total :</td>
-      <td style="text-align:right;">${baseTotal} FCFA</td>
-    </tr>
-  `;
-
-  const addDiscRow = (label, amount) => {
-    discountRowsHtml += `
-      <tr class="discount-row">
-        <td colspan="3" style="text-align:right;">${label} :</td>
-        <td style="text-align:right;">- ${amount} FCFA</td>
-      </tr>
-    `;
-  };
-
-  if (promoDiscount > 0) addDiscRow("Remise promo", promoDiscount);
-  if (manualDiscount > 0) addDiscRow("Remise", manualDiscount);
-  if (birthdayDiscount > 0) addDiscRow("Remise anniversaire", birthdayDiscount);
-
-  if (discountReason) {
-    discountRowsHtml += `
-      <tr class="discount-row">
-        <td colspan="4" style="text-align:left;">Raison : ${discountReason}</td>
-      </tr>
-    `;
+  // client + fidélité (-10 % à partir de 100 000 F d'achats cumulés)
+  let clientHtml = "";
+  const client = sale.clientId ? (clients || []).find((c) => String(c.id) === String(sale.clientId)) : null;
+  if (sale.clientName || client) {
+    const nom = client ? client.name : sale.clientName;
+    let fidelite = "";
+    if (client && typeof getClientStats === "function") {
+      const cumul = getClientStats(client).total;
+      const reste = FIDELITE_OBJECTIF - cumul;
+      fidelite = reste > 0
+        ? `<div class="fidelite">⭐ Vos achats cumulés : <strong>${fmt(cumul)} F</strong><br>Plus que <strong>${fmt(reste)} F</strong> pour profiter de -10 % 🎁</div>`
+        : `<div class="fidelite">⭐ Vos achats cumulés : <strong>${fmt(cumul)} F</strong><br>Vous avez droit à votre réduction de -10 % 🎁</div>`;
+    }
+    clientHtml = `<div class="line"></div>
+      <div class="row small"><span>Client</span><span>${esc(nom)}</span></div>
+      ${fidelite}`;
+  } else {
+    clientHtml = `<div class="line"></div>
+      <div class="fidelite">📲 Donnez votre numéro à chaque achat : vos achats sont cumulés pour -10 % et votre remise anniversaire 🎁</div>`;
   }
 
-  const receiptHtml = `
-    <!DOCTYPE html>
-    <html lang="fr">
-    <head>
-      <meta charset="UTF-8">
-      <title>Ticket de caisse - ${boutiqueName}</title>
-      <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 13px; margin: 10px; color: #111827; }
-        .ticket-container { max-width: 320px; margin: 0 auto; }
-        .ticket-logo { text-align: center; margin-bottom: 4px; }
-        .ticket-logo img { width: 60px; height: 60px; object-fit: cover; border-radius: 14px; border: 1px solid #e5e7eb; }
-        h1 { font-size: 18px; text-align: center; margin: 4px 0 2px; }
-        .subtitle { text-align: center; font-size: 11px; color: #6b7280; margin-bottom: 8px; }
-        .line { border-top: 1px dashed #9ca3af; margin: 6px 0; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { padding: 3px 0; }
-        th { border-bottom: 1px solid #e5e7eb; font-size: 12px; text-align: left; }
-        .total-row td { border-top: 1px solid #e5e7eb; padding-top: 6px; font-weight: 600; }
-        .discount-row td { font-size: 12px; color: #6b7280; }
-        .footer { margin-top: 12px; text-align: center; font-size: 12px; color: #374151; line-height: 1.4; }
-        .print-btn { margin-top: 10px; padding: 6px 10px; font-size: 12px; }
-        .qr { margin-top: 6px; width: 120px; height: 120px; }
-      </style>
-    </head>
-    <body>
-      <div class="ticket-container">
-        <div class="ticket-logo">
-          <img src="logo.png" alt="Logo BSK" onerror="this.style.display='none'">
-        </div>
-        <h1>${boutiqueName}</h1>
-        <div class="subtitle">${dateStr}</div>
-        <div class="line"></div>
+  const qrWa = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=${encodeURIComponent("https://wa.me/" + BOUTIQUE.whatsapp)}`;
+  const qrSite = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=${encodeURIComponent("https://" + BOUTIQUE.site)}`;
 
-        <table>
-          <thead>
-            <tr>
-              <th>Produit</th>
-              <th style="text-align:center;">Qté</th>
-              <th style="text-align:right;">Prix</th>
-              <th style="text-align:right;">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml}
-            ${discountRowsHtml}
-            <tr class="total-row">
-              <td colspan="3" style="text-align:right;">Total à payer :</td>
-              <td style="text-align:right;">${sale.total} FCFA</td>
-            </tr>
-          </tbody>
-        </table>
+  const receiptHtml = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ticket ${numero} - ${BOUTIQUE.nom}</title>
+<style>
+  @page { size: 80mm auto; margin: 3mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 13px; color: #111; margin: 0; background: #f3f4f6; }
+  .ticket { width: 74mm; max-width: 100%; margin: 10px auto; background: #fff; padding: 12px 10px 14px; }
+  .center { text-align: center; }
+  .logo { width: 64px; height: 64px; object-fit: cover; border-radius: 14px; }
+  h1 { font-size: 22px; letter-spacing: 3px; margin: 4px 0 0; }
+  .slogan { font-size: 11px; color: #555; margin-top: 2px; }
+  .site { font-size: 14px; font-weight: 700; margin-top: 4px; }
+  .muted { color: #666; }
+  .small { font-size: 11.5px; }
+  .line { border-top: 1px dashed #999; margin: 8px 0; }
+  .row { display: flex; justify-content: space-between; gap: 8px; }
+  .item { margin-bottom: 5px; }
+  .item-nom { font-weight: 600; }
+  .item-calc { display: flex; justify-content: space-between; color: #333; }
+  .total { display: flex; justify-content: space-between; font-size: 18px; font-weight: 800; margin-top: 4px; }
+  .economie { margin-top: 4px; padding: 4px 6px; border: 1px solid #111; border-radius: 6px; text-align: center; font-size: 12px; font-weight: 700; }
+  .fidelite { font-size: 11.5px; line-height: 1.35; text-align: center; margin-top: 4px; }
+  .merci { font-size: 15px; font-weight: 700; margin: 10px 0 2px; }
+  .qrs { display: flex; justify-content: center; gap: 14px; margin-top: 8px; }
+  .qrs div { font-size: 10px; text-align: center; }
+  .qrs img { width: 78px; height: 78px; display: block; margin: 0 auto 2px; }
+  .actions { text-align: center; margin: 12px 0 4px; }
+  .actions button { padding: 8px 16px; font-size: 14px; border-radius: 999px; border: 1px solid #111; background: #111; color: #fff; cursor: pointer; }
+  @media print {
+    body { background: #fff; }
+    .ticket { margin: 0; width: 100%; padding: 0; }
+    .actions { display: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="ticket">
+    <div class="center">
+      <img class="logo" src="${logo}" alt="BSK" onerror="this.style.display='none'">
+      <h1>${BOUTIQUE.nom}</h1>
+      <div class="slogan">Parfums • Brumes • Muscs</div>
+      <div class="site">🌐 ${BOUTIQUE.site}</div>
+      <div class="small muted">${esc(BOUTIQUE.adresse)}<br>📞 ${BOUTIQUE.telephone}</div>
+    </div>
 
-        <div class="footer">
-          Merci pour votre achat 💛<br><br>
-          <strong>BSK</strong><br>
-          Grand Dakar – Garage Casamance<br>
-          Téléphone : 77 876 92 01<br>
-          Horaires : 12h à 23h (Lundi → Samedi)<br><br>
-          <span>Scannez pour nous écrire sur WhatsApp :</span><br>
-          <img class="qr"
-            src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=https://wa.me/221778769201"
-            alt="QR WhatsApp BSK">
-        </div>
+    <div class="line"></div>
+    <div class="row small"><span>Ticket N° ${numero}</span><span>${dateStr} ${heureStr}</span></div>
+    <div class="line"></div>
 
-        <button class="print-btn" onclick="window.print()">Imprimer</button>
+    ${lignes}
+
+    <div class="line"></div>
+    <div class="row small"><span>${nbArticles} article${nbArticles > 1 ? "s" : ""}</span><span></span></div>
+    ${totalRemises ? `<div class="row"><span>Sous-total</span><span>${fmt(sousTotal)} F</span></div>${remisesHtml}` : ""}
+    <div class="total"><span>TOTAL</span><span>${fmt(sale.total)} FCFA</span></div>
+    <div class="row small"><span>Payé par</span><span>${esc(formatPaymentMethod(sale.paymentMethod))}</span></div>
+    ${totalRemises ? `<div class="economie">🎉 Vous avez économisé ${fmt(totalRemises)} FCFA</div>` : ""}
+
+    ${clientHtml}
+
+    <div class="line"></div>
+    <div class="center">
+      <div class="merci">Merci pour votre achat 🧡</div>
+      <div class="small">Commandez en ligne sur <strong>${BOUTIQUE.site}</strong><br>Livraison partout à Dakar 🛵</div>
+      <div class="small muted" style="margin-top:4px;">Ouvert de ${BOUTIQUE.horaires}</div>
+      <div class="qrs">
+        <div><img src="${qrSite}" alt="Site BSK">Notre site</div>
+        <div><img src="${qrWa}" alt="WhatsApp BSK">WhatsApp</div>
       </div>
-    </body>
-    </html>
-  `;
+    </div>
 
-  const win = window.open("", "_blank", "width=400,height=600");
+    <div class="actions"><button onclick="window.print()">🖨️ Imprimer</button></div>
+  </div>
+</body>
+</html>`;
+
+  const win = window.open("", "_blank", "width=420,height=720");
   if (!win) {
     alert("Autorisez les pop-up pour voir le ticket.");
     return;
