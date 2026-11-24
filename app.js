@@ -55,9 +55,11 @@ function isClientBirthdaySoon(client, hours = 72) {
   const year = now.getFullYear();
 
   let nextBirthday = new Date(year, dob.getMonth(), dob.getDate());
-  if (nextBirthday < now) nextBirthday.setFullYear(year + 1);
+  // ✅ l'anniversaire du jour compte (avant, il était exclu dès minuit passé)
+  const today = new Date(year, now.getMonth(), now.getDate());
+  if (nextBirthday < today) nextBirthday.setFullYear(year + 1);
 
-  const diffHours = (nextBirthday - now) / (1000 * 60 * 60);
+  const diffHours = (nextBirthday - today) / (1000 * 60 * 60);
   return diffHours >= 0 && diffHours <= hours;
 }
 
@@ -425,6 +427,8 @@ function showView(viewName) {
     renderCreditsUI();
   } else if (viewName === "livraisons") {
     renderLivraisonsView();
+  } else if (viewName === "b2b") {
+    renderB2BView();
   } else if (viewName === "pro") {
     renderProView();
   }
@@ -2066,18 +2070,34 @@ function getClientStats(c) {
   const derniere = avecAdresse[avecAdresse.length - 1];
   const total = achats.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
   const dernier = dates[dates.length - 1] || null;
+  const derniereVente = dernier ? achats.filter((s) => s.date === dernier)[0] : null;
+  const derniersProduits = derniereVente
+    ? (derniereVente.items || []).map((i) => i.name).filter((n) => n && !PRO_NON_PRODUCT_ITEMS.includes(proKey(n)))
+    : [];
   return {
     achats: achats.length,
     total,
     panier: achats.length ? total / achats.length : 0,
     premier: dates[0] || null,
     dernier,
+    derniersProduits,
     joursDepuis: dernier ? Math.floor((Date.now() - new Date(dernier).getTime()) / 86400000) : null,
+    heuresDepuis: dernier ? (Date.now() - new Date(dernier).getTime()) / 3600000 : null,
     adresse: derniere ? derniere["Adresse"] : "",
     repere: derniere ? derniere["Repère"] || "" : "",
     livraisons: livs.length,
     source: livs.length ? livs[0]["Source"] || "" : ""
   };
+}
+
+function joursAvantAnniversaire(c) {
+  const dob = parseClientBirthdate(c);
+  if (!dob) return 999;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let next = new Date(now.getFullYear(), dob.getMonth(), dob.getDate());
+  if (next < today) next.setFullYear(now.getFullYear() + 1);
+  return Math.round((next - today) / 86400000);
 }
 
 function joursTexte(j) {
@@ -2100,6 +2120,10 @@ function renderClientsTable() {
 const RELANCE_KEY = "bsk_relances";            // { clientId: { at, cat } } (gardé sur cet appareil)
 const RELANCE_MSG_KEY = "bsk_relance_messages";
 const RELANCE_JOURS_DORMANT = 60;              // « pas commandé depuis 2 mois »
+const FIDELITE_OBJECTIF = 100000;              // total d'achats qui donne droit à -10 %
+const FIDELITE_PALIERS = [50000, 90000];       // caps où on prévient le client
+// ajouté à la fin de TOUS les messages
+const RAPPEL_COMPTE_CLIENT = "📲 Petit rappel : à chaque achat, donne ton numéro pour utiliser ton compte client BSK. C'est grâce à lui que tes achats sont cumulés pour ta réduction de -10 % et ta remise anniversaire 🎁";
 
 const RELANCE_CATS = {
   tous: {
@@ -2117,6 +2141,22 @@ const RELANCE_CATS = {
   nouveau: {
     help: "Clients avec un seul achat il y a 7 à 45 jours. C'est le bon moment pour les faire revenir une 2e fois.",
     msg: "Bonjour {prenom} 😊\n\nMerci encore pour ton premier achat chez BSK ! Est-ce que ton parfum te plaît ?\n\nSi tu veux découvrir d'autres senteurs, on peut te conseiller et te livrer directement 💛"
+  },
+  satisfaction: {
+    help: "Clients qui ont acheté ces dernières 72 heures. Ceux qui ont déjà reçu l'enquête pour ce dernier achat passent en bas de la liste.",
+    msg: "Bonjour {prenom} 👋🏽,\nmerci encore pour ton achat chez BSK !\nOn espère que tu as apprécié ton passage chez nous 🧡\n\nSi tu as un moment, dis-nous ce que tu as pensé de ton expérience et du produit que tu as acheté. Ton retour compte beaucoup pour nous 🙏🏽\nTu peux répondre directement ici, ça ne prend qu’une minute 😊\n\nMerci pour ta confiance !\n— L’équipe BSK"
+  },
+  palier50: {
+    help: "Clients qui ont cumulé entre 50 000 et 89 999 FCFA d'achats : on leur dit combien il leur reste pour avoir -10 %.",
+    msg: "Bonjour {prenom} 👋🏽,\n\nMerci pour ta fidélité chez BSK 🧡\nTu as déjà cumulé {total} d'achats avec nous !\nPlus que {reste} et tu profites de -10 % de réduction 🎁\n\nÀ très vite chez BSK !"
+  },
+  palier90: {
+    help: "Clients qui ont cumulé entre 90 000 et 99 999 FCFA d'achats : ils sont tout près de leur réduction de -10 %.",
+    msg: "Bonjour {prenom} 👋🏽,\n\nBravo, tu as cumulé {total} d'achats chez BSK 🎉\nIl ne te reste plus que {reste} pour débloquer ta réduction de -10 % 🎁\nC'est le moment de te faire plaisir 😉\n\nÀ très vite chez BSK !"
+  },
+  anniversaire: {
+    help: "Clients dont l'anniversaire est dans les 72 heures (date de naissance renseignée dans la fiche). La remise anniversaire de -30 % s'applique toute seule en caisse quand le client est choisi.",
+    msg: "Joyeux anniversaire {prenom} 🎉🥳\n\nToute l'équipe BSK te souhaite une magnifique journée 🧡\nPour l'occasion, tu bénéficies de -30 % sur toute la boutique, valable 72h 🎁\n\nÀ très vite chez BSK !"
   },
   jamais: {
     help: "Clients enregistrés qui n'ont encore rien acheté (contact pris, live, demande de prix…).",
@@ -2167,10 +2207,33 @@ function computeRelanceLists() {
     .sort((a, b) => ((a.relanceJours !== null && a.relanceJours < 30) - (b.relanceJours !== null && b.relanceJours < 30)) || b.st.total - a.st.total);
   const nouveau = all.filter((x) => x.st.achats === 1 && x.st.joursDepuis >= 7 && x.st.joursDepuis <= 45)
     .sort((a, b) => a.st.joursDepuis - b.st.joursDepuis);
+  // enquête déjà envoyée après le dernier achat ?
+  all.forEach((x) => {
+    const e = relances["sat:" + String(x.c.id)];
+    x.enqueteFaite = !!(e && x.st.dernier && new Date(e.at) >= new Date(x.st.dernier));
+  });
+  const satisfaction = all.filter((x) => x.st.heuresDepuis !== null && x.st.heuresDepuis <= 72)
+    .sort((a, b) => (a.enqueteFaite - b.enqueteFaite) || a.st.heuresDepuis - b.st.heuresDepuis);
+
+  // caps de fidélité : message envoyé une seule fois par cap
+  const [p50, p90] = FIDELITE_PALIERS;
+  all.forEach((x) => {
+    x.palierFait = { palier50: !!relances["palier50:" + x.c.id], palier90: !!relances["palier90:" + x.c.id] };
+    const a = relances["anniversaire:" + x.c.id];
+    x.annivFait = !!(a && Date.now() - new Date(a.at).getTime() < 30 * 86400000);
+  });
+  const palier50 = all.filter((x) => x.st.total >= p50 && x.st.total < p90)
+    .sort((a, b) => (a.palierFait.palier50 - b.palierFait.palier50) || b.st.total - a.st.total);
+  const palier90 = all.filter((x) => x.st.total >= p90 && x.st.total < FIDELITE_OBJECTIF)
+    .sort((a, b) => (a.palierFait.palier90 - b.palierFait.palier90) || b.st.total - a.st.total);
+
+  // anniversaires dans les 72h (le plus proche en premier)
+  const anniversaire = all.filter((x) => isClientBirthdaySoon(x.c))
+    .sort((a, b) => (a.annivFait - b.annivFait) || joursAvantAnniversaire(a.c) - joursAvantAnniversaire(b.c));
   const jamais = all.filter((x) => x.st.achats === 0)
     .sort((a, b) => new Date(b.c.createdAt || 0) - new Date(a.c.createdAt || 0));
   const tous = all.slice().sort((a, b) => b.st.total - a.st.total || String(a.c.name).localeCompare(String(b.c.name), "fr"));
-  return { vip, dormant, nouveau, jamais, tous, all };
+  return { vip, dormant, nouveau, jamais, satisfaction, palier50, palier90, anniversaire, tous, all };
 }
 
 function renderRelances() {
@@ -2213,16 +2276,27 @@ function renderRelances() {
   tbody.innerHTML = list.slice(0, max).map((x, i) => {
     const { c, st } = x;
     const rang = (relanceCat === "vip" || relanceCat === "tous") && st.total > 0 ? (i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1) : i + 1;
-    const relance = x.relanceJours !== null
+    const sat = relanceCat === "satisfaction";
+    const palier = relanceCat === "palier50" || relanceCat === "palier90";
+    const anniv = relanceCat === "anniversaire";
+    const relance = sat
+      ? (x.enqueteFaite ? `<small class="text-pos">✅ enquête envoyée</small><br>` : "")
+      : palier ? (x.palierFait[relanceCat] ? `<small class="text-pos">✅ message envoyé</small><br>` : "")
+      : anniv ? (x.annivFait ? `<small class="text-pos">✅ souhaité</small><br>` : "")
+      : x.relanceJours !== null
       ? `<small class="${x.relanceJours < 30 ? "text-pos" : "help-text"}">✅ relancé ${joursTexte(x.relanceJours)}</small><br>` : "";
     const wa = clientPhoneKey(c.phone).length >= 9;
-    return `<tr class="${x.relanceJours !== null && x.relanceJours < 30 ? "relance-faite" : ""}">
+    const faite = sat ? x.enqueteFaite : palier ? x.palierFait[relanceCat] : anniv ? x.annivFait
+      : x.relanceJours !== null && x.relanceJours < 30;
+    return `<tr class="${faite ? "relance-faite" : ""}">
       <td>${rang}</td>
-      <td><strong>${proEscape(c.name)}</strong>${isClientBirthdaySoon(c) ? " 🎂" : ""}<br><small>${proEscape(c.phone || "pas de numéro")}</small></td>
+      <td><strong>${proEscape(c.name)}</strong>${isClientBirthdaySoon(c) ? " 🎂" : ""}<br><small>${proEscape(c.phone || "pas de numéro")}</small>${sat && st.derniersProduits.length ? `<br><small class="help-text">🛍️ ${proEscape(st.derniersProduits.join(", "))}</small>` : ""}</td>
       <td>${st.adresse ? proEscape(st.adresse) : "—"}</td>
       <td>${st.achats}${st.livraisons ? ` <small class="help-text">(${st.livraisons} livr.)</small>` : ""}</td>
-      <td>${fmt(st.total)} FCFA${st.achats > 1 ? `<br><small class="help-text">panier ${fmt(st.panier)}</small>` : ""}</td>
-      <td>${joursTexte(st.joursDepuis)}</td>
+      <td>${fmt(st.total)} FCFA${palier ? `<br><small class="text-neg">reste ${fmt(FIDELITE_OBJECTIF - st.total)} pour -10 %</small>`
+        : anniv ? `<br><small class="help-text">🎂 ${formatBirthdateShort(c.birthdate)} (${joursAvantAnniversaire(c) === 0 ? "aujourd'hui" : "dans " + joursAvantAnniversaire(c) + " j"})</small>`
+        : st.achats > 1 ? `<br><small class="help-text">panier ${fmt(st.panier)}</small>` : ""}</td>
+      <td>${sat && st.heuresDepuis !== null ? (st.heuresDepuis < 24 ? `il y a ${Math.max(1, Math.round(st.heuresDepuis))} h` : joursTexte(st.joursDepuis)) : joursTexte(st.joursDepuis)}</td>
       <td>${relance}<button class="small-btn" onclick="openClientPopup('${c.id}')">Détails</button>
         ${wa ? `<button class="small-btn" onclick="relancerClient('${c.id}')">💬 WhatsApp</button>` : `<small class="help-text">pas de numéro</small>`}</td>
     </tr>`;
@@ -2233,12 +2307,21 @@ function renderRelances() {
 function relancerClient(clientId) {
   const c = (clients || []).find((x) => String(x.id) === String(clientId));
   if (!c) return;
-  const prenom = String(c.name || "").trim().split(/\s+/)[0] || "";
-  const msg = getRelanceMessage(relanceCat).replace(/\{prenom\}/g, prenom);
+  let prenom = String(c.name || "").trim().split(/\s+/)[0] || "";
+  if (/^client$/i.test(prenom) || !/[^\W\d_]/.test(prenom)) prenom = ""; // « Client WhatsApp » → pas de prénom
+  const st = getClientStats(c);
+  const msg = (getRelanceMessage(relanceCat).trim() + "\n\n" + RAPPEL_COMPTE_CLIENT)
+    .replace(/\{prenom\}/g, prenom)
+    .replace(/\{total\}/g, fmt(st.total) + " FCFA")
+    .replace(/\{reste\}/g, fmt(Math.max(0, FIDELITE_OBJECTIF - st.total)) + " FCFA")
+    .replace(/[ \t]+,/g, ",")           // prénom vide : « Bonjour  , » → « Bonjour, »
+    .replace(/[ \t]{2,}/g, " ");
   const k = clientPhoneKey(c.phone);
   window.open(`https://wa.me/221${k}?text=${encodeURIComponent(msg)}`, "_blank");
   const r = loadRelances();
   r[String(c.id)] = { at: new Date().toISOString(), cat: relanceCat };
+  if (relanceCat === "satisfaction") r["sat:" + String(c.id)] = { at: new Date().toISOString() };
+  if (["palier50", "palier90", "anniversaire"].includes(relanceCat)) r[relanceCat + ":" + String(c.id)] = { at: new Date().toISOString() };
   try { localStorage.setItem(RELANCE_KEY, JSON.stringify(r)); } catch (e) {}
   renderRelances();
 }
@@ -2276,10 +2359,10 @@ function sendBirthdayMessage(clientId) {
     `Toute l'équipe BSK te souhaite un très joyeux anniversaire ! 🥳\n` +
     `Pour l'occasion, tu bénéficies d'une remise exceptionnelle de -30% sur toute la boutique, ` +
     `valable 72h à partir d'aujourd'hui.\n\n` +
-    `À très vite chez BSK 💛`;
+    `À très vite chez BSK 💛\n\n` + RAPPEL_COMPTE_CLIENT;
 
   if (c.phone) {
-    const phoneClean = c.phone.replace(/[^0-9]/g, "");
+    const phoneClean = "221" + clientPhoneKey(c.phone);
     const url = `https://wa.me/${phoneClean}?text=${encodeURIComponent(baseMessage)}`;
     window.open(url, "_blank");
   } else {
@@ -3803,6 +3886,7 @@ function computeCaisseBalance() {
 
   vault.moves.forEach((m) => {
     if (m.type !== "deposit") return;
+    if (String(m.motif || "").indexOf("[B2B]") === 0) return; // ✅ dépôt venant de la caisse B2B
     if (new Date(m.at).getTime() > t0) total -= Number(m.amount) || 0;
   });
 
@@ -4032,7 +4116,7 @@ function renderCoffreView() {
   let running = 0;
   const rows = coffreMoves.map((m) => {
     let label, amount;
-    if (m.type === "deposit") { label = "⬇️ Dépôt depuis la caisse"; amount = Number(m.amount); }
+    if (m.type === "deposit") { label = String(m.motif || "").indexOf("[B2B]") === 0 ? "⬇️ Dépôt depuis la caisse B2B" : "⬇️ Dépôt depuis la caisse"; amount = Number(m.amount); }
     else if (m.type === "withdraw") { label = `⬆️ Décaissement (${proEscape(m.category || "Autre")})`; amount = -Number(m.amount); }
     else { label = "⚖️ Ajustement"; amount = Number(m.delta); }
     running += amount;

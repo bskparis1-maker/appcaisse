@@ -23,6 +23,7 @@
       <button onclick="showView('ventes')">Ventes</button>
       <button onclick="showView('credit')">Crédit</button> <!-- ✅ AJOUT -->
       <button onclick="showView('livraisons')">Livraisons 🛵</button>
+      <button onclick="showView('b2b')">B2B 🏢</button>
       <button onclick="showView('clients')">Clients</button>
       <button class="nav-pro" onclick="showView('produits')">Produits 🔒</button>
       <button class="nav-pro" onclick="showView('dashboard')">Tableau de bord 🔒</button>
@@ -253,13 +254,19 @@
           <button class="secondary-btn relance-btn" data-cat="dormant" onclick="setRelanceCat('dormant')">😴 Pas commandé depuis 2 mois</button>
           <button class="secondary-btn relance-btn" data-cat="nouveau" onclick="setRelanceCat('nouveau')">🌱 Nouveaux à fidéliser</button>
           <button class="secondary-btn relance-btn" data-cat="jamais" onclick="setRelanceCat('jamais')">💤 Jamais acheté</button>
+          <button class="secondary-btn relance-btn" data-cat="satisfaction" onclick="setRelanceCat('satisfaction')">⭐ Enquête de satisfaction</button>
+          <button class="secondary-btn relance-btn" data-cat="palier50" onclick="setRelanceCat('palier50')">💰 Cap des 50 000 F</button>
+          <button class="secondary-btn relance-btn" data-cat="palier90" onclick="setRelanceCat('palier90')">🔥 Cap des 90 000 F</button>
+          <button class="secondary-btn relance-btn" data-cat="anniversaire" onclick="setRelanceCat('anniversaire')">🎂 Anniversaire (72h)</button>
         </div>
         <p id="relance-help" class="help-text"></p>
 
         <details class="relance-msg">
           <summary>✏️ Message WhatsApp de cette liste (modifiable)</summary>
           <textarea id="relance-message" rows="4" oninput="saveRelanceMessage(this.value)"></textarea>
-          <p class="help-text">« {prenom} » est remplacé par le prénom du client. <button type="button" class="secondary-btn small-btn" onclick="resetRelanceMessage()">Remettre le message par défaut</button></p>
+          <p class="help-text">« {prenom} » = prénom du client, « {total} » = total de ses achats, « {reste} » = ce qui lui manque pour la réduction de -10 %.<br>
+            📲 Le rappel « utilise ton compte client » est ajouté automatiquement à la fin de chaque message.
+            <button type="button" class="secondary-btn small-btn" onclick="resetRelanceMessage()">Remettre le message par défaut</button></p>
         </details>
 
         <table>
@@ -736,6 +743,166 @@
       </div>
     </section>
 
+
+    <!-- ============ VUE B2B ============ -->
+    <section id="view-b2b" class="view hidden">
+      <h2>B2B 🏢 <small class="help-text">établissements, dépôts-ventes, ventes en gros</small></h2>
+      <div class="liv-sub">
+        <button class="secondary-btn b2b-sub-btn" data-vue="fiches" onclick="b2bNav('fiches')">🏢 Fiches</button>
+        <button class="secondary-btn b2b-sub-btn" data-vue="depots" onclick="b2bNav('depots')">📦 Dépôts-ventes</button>
+        <button class="secondary-btn b2b-sub-btn" data-vue="commandes" onclick="b2bNav('commandes')">🧾 Commandes</button>
+        <button class="secondary-btn b2b-sub-btn" data-vue="caisse" onclick="b2bNav('caisse')">💵 Caisse B2B</button>
+        <button class="secondary-btn b2b-sub-btn" data-vue="bord" onclick="b2bNav('bord')">📊 Tableau de bord 🔒</button>
+        <button class="secondary-btn b2b-sub-btn" data-vue="tarifs" onclick="b2bNav('tarifs')">🏷️ Tarifs B2B</button>
+        <button class="secondary-btn" onclick="b2bCharger()">↻</button>
+        <span id="b2b-etat" class="help-text"></span>
+      </div>
+
+      <!-- FICHES -->
+      <div id="b2b-fiches">
+        <div class="liv-filtres" style="grid-template-columns:2fr 1fr;">
+          <input type="text" id="b2b-rech" placeholder="Rechercher établissement, responsable, numéro, quartier…" />
+          <button class="primary-btn" style="margin-top:0" onclick="b2bOuvrirFiche()">+ Nouvelle fiche</button>
+        </div>
+        <form id="b2b-fiche-form" class="payment-section hidden" onsubmit="b2bEnregistrerFiche(event)">
+          <h3 id="b2b-fiche-titre">Nouvelle fiche</h3>
+          <input type="hidden" id="b2b-f-id" />
+          <div class="form-grid">
+            <label>Téléphone du responsable<input type="tel" id="b2b-f-tel" inputmode="tel" placeholder="77 123 45 67" autocomplete="off" /></label>
+            <label>Établissement *<input type="text" id="b2b-f-etab" placeholder="Ex : Salon Beauté Divine" /></label>
+            <label>Nom du responsable<input type="text" id="b2b-f-resp" placeholder="Ex : Mme Ndiaye" /></label>
+            <label>Adresse de l'établissement<input type="text" id="b2b-f-adresse" placeholder="Ex : Liberté 6, rond-point" /></label>
+            <label>Statut
+              <select id="b2b-f-statut">
+                <option>À contacter</option><option>Contacté</option><option>Intéressé</option><option>Client</option><option>Pas intéressé</option>
+              </select>
+            </label>
+            <label>Note<input type="text" id="b2b-f-note" placeholder="Ex : rappeler lundi, intéressé par les brumes" /></label>
+          </div>
+          <div id="b2b-f-doublon" class="client-duplicate hidden"></div>
+          <button type="submit" class="primary-btn">💾 Enregistrer</button>
+          <button type="button" class="secondary-btn" onclick="b2bFermerFiche()">Annuler</button>
+        </form>
+        <div id="b2b-seg-statut" class="dashboard-quick" style="margin:8px 0;"></div>
+        <div id="b2b-fiches-liste"></div>
+      </div>
+
+      <!-- DÉPÔTS-VENTES -->
+      <div id="b2b-depots" class="hidden">
+        <button class="primary-btn" onclick="b2bNouveauDepot()">+ Nouveau dépôt</button>
+        <label class="help-text" style="margin-left:10px;"><input type="checkbox" id="b2b-dep-clos" onchange="b2bRendreDepots()" /> voir aussi les dépôts clôturés</label>
+        <div id="b2b-dep-form" class="payment-section hidden">
+          <h3>Nouveau dépôt-vente</h3>
+          <label>Établissement *<select id="b2b-dep-client"></select></label>
+          <h3>Produits déposés</h3>
+          <div id="b2b-dep-lignes"></div>
+          <button type="button" class="secondary-btn" onclick="b2bAjouterLigne('b2b-dep-lignes')">+ Ajouter un produit</button>
+          <p id="b2b-dep-lignes-total" class="total-label"></p>
+          <label>Note<input type="text" id="b2b-dep-note" placeholder="Ex : point prévu fin du mois" /></label>
+          <p class="help-text">Le stock est retiré dès l'enregistrement. Au moment du point : les produits vendus sont facturés (caisse B2B) et les invendus rendus reviennent dans le stock.</p>
+          <button class="primary-btn" onclick="b2bEnregistrerDepot()">💾 Enregistrer le dépôt</button>
+          <button class="secondary-btn" onclick="document.getElementById('b2b-dep-form').classList.add('hidden')">Annuler</button>
+        </div>
+        <div id="b2b-depots-liste" style="margin-top:10px;"></div>
+      </div>
+
+      <!-- COMMANDES -->
+      <div id="b2b-commandes" class="hidden">
+        <button class="primary-btn" onclick="b2bNouvelleCommande()">+ Nouvelle commande en gros</button>
+        <div id="b2b-cmd-form" class="payment-section hidden">
+          <h3>Nouvelle commande (vente en gros)</h3>
+          <label>Établissement *<select id="b2b-cmd-client"></select></label>
+          <h3>Produits</h3>
+          <div id="b2b-cmd-lignes"></div>
+          <button type="button" class="secondary-btn" onclick="b2bAjouterLigne('b2b-cmd-lignes')">+ Ajouter un produit</button>
+          <p id="b2b-cmd-lignes-total" class="total-label"></p>
+          <div class="form-grid">
+            <label>Payé maintenant (FCFA)<input type="number" id="b2b-cmd-paye" min="0" /></label>
+            <label>Mode de paiement<select id="b2b-cmd-mode"></select></label>
+            <label>Note<input type="text" id="b2b-cmd-note" placeholder="Ex : livraison jeudi" /></label>
+          </div>
+          <p class="help-text">Si le montant payé est inférieur au total, le reste est noté « à payer » sur la fiche de l'établissement.</p>
+          <button class="primary-btn" onclick="b2bEnregistrerCommande()">💾 Enregistrer la commande</button>
+          <button class="secondary-btn" onclick="document.getElementById('b2b-cmd-form').classList.add('hidden')">Annuler</button>
+        </div>
+        <h3>Ventes B2B</h3>
+        <select id="b2b-ventes-filtre" onchange="b2bRendreCommandes()" class="liv-filtres-select">
+          <option value="">Toutes</option><option value="impaye">Reste à payer</option><option value="Commande">Commandes</option><option value="Dépôt-vente">Dépôts-ventes</option>
+        </select>
+        <table>
+          <thead><tr><th>Date</th><th>Établissement</th><th>Produits</th><th>Total</th><th>Payé</th><th>Reste</th><th>Actions</th></tr></thead>
+          <tbody id="b2b-ventes-body"></tbody>
+        </table>
+      </div>
+
+      <!-- CAISSE B2B -->
+      <div id="b2b-caisse" class="hidden">
+        <div class="cash-box">
+          <div class="cash-box-label">💵 Disponible dans la caisse B2B (espèces)</div>
+          <div class="cash-box-value"><span id="b2b-caisse-solde">0</span> FCFA</div>
+          <div class="cash-box-sub">Encaissements B2B en espèces, moins les dépôts de la caisse B2B dans le coffre. Séparée de la caisse boutique.</div>
+        </div>
+        <div class="cash-actions">
+          <button class="primary-btn" onclick="b2bDeposerCoffre()">🔐 Déposer dans le coffre</button>
+        </div>
+        <div class="dashboard-summary" id="b2b-caisse-kpis"></div>
+        <h3>Ventes B2B du jour</h3>
+        <table>
+          <thead><tr><th>Heure</th><th>Établissement</th><th>Produits</th><th>Total</th><th>Paiement</th></tr></thead>
+          <tbody id="b2b-caisse-ventes"></tbody>
+        </table>
+        <h3>Encaissements du jour</h3>
+        <table>
+          <thead><tr><th>Heure</th><th>Établissement</th><th>Montant</th><th>Mode</th><th>Note</th></tr></thead>
+          <tbody id="b2b-caisse-pays"></tbody>
+        </table>
+      </div>
+
+      <!-- TABLEAU DE BORD (code) -->
+      <div id="b2b-bord" class="hidden">
+        <div id="b2b-lock" class="pro-lock">
+          <div style="font-size:34px;">🔒</div>
+          <p class="help-text">Entre le code pour voir le tableau de bord B2B.</p>
+          <form onsubmit="b2bDeverrouiller(event)">
+            <input type="password" id="b2b-lock-input" inputmode="numeric" maxlength="10" placeholder="Code" autocomplete="off" />
+            <button type="submit" class="primary-btn">Déverrouiller</button>
+          </form>
+          <p id="b2b-lock-error" class="pro-error hidden">Code incorrect.</p>
+        </div>
+        <div id="b2b-bord-contenu" class="hidden">
+          <div class="dashboard-quick">
+            <button class="secondary-btn b2b-period-btn" data-period="day" onclick="b2bSetPeriode('day')">Aujourd'hui</button>
+            <button class="secondary-btn b2b-period-btn" data-period="week" onclick="b2bSetPeriode('week')">Cette semaine</button>
+            <button class="secondary-btn b2b-period-btn" data-period="month" onclick="b2bSetPeriode('month')">Ce mois</button>
+            <button class="secondary-btn b2b-period-btn" data-period="year" onclick="b2bSetPeriode('year')">Cette année</button>
+            <button class="secondary-btn" onclick="lockPro();b2bRendre()">🔒 Verrouiller</button>
+          </div>
+          <div class="dashboard-summary" id="b2b-bord-kpis"></div>
+          <h3>Prospection</h3>
+          <div class="dashboard-summary" id="b2b-bord-funnel"></div>
+          <h3>Meilleurs établissements (période)</h3>
+          <table>
+            <thead><tr><th>#</th><th>Établissement</th><th>Ventes</th><th>CA</th><th>Doit encore</th></tr></thead>
+            <tbody id="b2b-bord-clients"></tbody>
+          </table>
+          <h3>Produits les plus vendus en B2B (période)</h3>
+          <table>
+            <thead><tr><th>Produit</th><th>Quantité</th><th>CA</th></tr></thead>
+            <tbody id="b2b-bord-produits"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TARIFS -->
+      <div id="b2b-tarifs" class="hidden">
+        <p class="help-text">Prix pro de chaque produit, proposé automatiquement dans les dépôts et commandes (modifiable à chaque fois). Vide = prix boutique.</p>
+        <table>
+          <thead><tr><th>Produit</th><th>Prix boutique</th><th>Prix B2B</th><th>Remise</th><th>Stock</th></tr></thead>
+          <tbody id="b2b-tarifs-body"></tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- ============ VUE BAR À PARFUM ============ -->
     <section id="view-bar-parfum" class="view hidden">
       <h2>Bar à parfum</h2>
@@ -969,6 +1136,28 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="app.js"></script>
   <script src="livraisons.js"></script>
+  <script src="b2b.js"></script>
+
+
+  <!-- ✅ B2B : ENCAISSER UN PAIEMENT -->
+  <div id="b2b-pay-modal" class="modal hidden">
+    <div class="modal-content" style="max-width:420px;">
+      <h3 id="b2b-pay-titre" style="margin-top:0;">💵 Encaisser</h3>
+      <p id="b2b-pay-info" class="help-text"></p>
+      <form onsubmit="b2bValiderPaiement(event)">
+        <label for="b2b-pay-montant">Montant reçu (FCFA)</label>
+        <input type="number" id="b2b-pay-montant" min="1" />
+        <label for="b2b-pay-mode">Mode</label>
+        <select id="b2b-pay-mode"></select>
+        <label for="b2b-pay-note">Note (optionnel)</label>
+        <input type="text" id="b2b-pay-note" />
+        <div class="modal-actions">
+          <button type="submit" class="primary-btn" style="margin-top:0;">Encaisser</button>
+          <button type="button" class="secondary-btn" style="margin-top:0;" onclick="b2bFermerPaiement()">Annuler</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <!-- ✅ MODALE NOUVEAU CLIENT -->
   <div id="client-form-modal" class="modal hidden">

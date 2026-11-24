@@ -1254,3 +1254,8 @@ nav .nav-badge {
   font-size: 14px;
 }
 tr.relance-faite td { opacity: 0.6; }
+
+/* ✅ B2B */
+.b2b-sub-btn.active, .b2b-period-btn.active, #b2b-seg-statut .active { background: #111827; color: #fff; border-color: #111827; }
+.liv-filtres-select { padding: 6px 8px; border-radius: 7px; border: 1px solid #d1d5db; font-size: 14px; background: #fff; }
+#b2b-depots-liste table input { padding: 4px 6px; border-radius: 7px; border: 1px solid #d1d5db; }
