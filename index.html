@@ -23,7 +23,7 @@
       <button onclick="showView('ventes')">Ventes</button>
       <button onclick="showView('credit')">Crédit</button> <!-- ✅ AJOUT -->
       <button onclick="showView('livraisons')">Livraisons 🛵</button>
-      <button onclick="showView('b2b')">B2B 🏢</button>
+      <button class="nav-pro" onclick="showView('b2b')">B2B 🏢 🔒</button>
       <button onclick="showView('clients')">Clients</button>
       <button class="nav-pro" onclick="showView('produits')">Produits 🔒</button>
       <button class="nav-pro" onclick="showView('dashboard')">Tableau de bord 🔒</button>
@@ -747,6 +747,21 @@
     <!-- ============ VUE B2B ============ -->
     <section id="view-b2b" class="view hidden">
       <h2>B2B 🏢 <small class="help-text">établissements, dépôts-ventes, ventes en gros</small></h2>
+      <!-- ✅ VERROU (même code que Produits / Coffre / Pro) -->
+      <div id="lock-b2b" class="pro-lock hidden">
+        <div style="font-size:34px;">🔒</div>
+        <p class="help-text">Entre le code pour accéder au B2B.</p>
+        <form onsubmit="unlockView(event, 'b2b')">
+          <input type="password" id="lock-b2b-input" inputmode="numeric" maxlength="10" placeholder="Code" autocomplete="off" />
+          <button type="submit" class="primary-btn">Déverrouiller</button>
+        </form>
+        <p id="lock-b2b-error" class="pro-error hidden">Code incorrect.</p>
+      </div>
+
+      <div id="b2b-content" class="hidden">
+      <div style="display:flex; justify-content:flex-end;">
+        <button class="secondary-btn" onclick="lockPro()">🔒 Verrouiller</button>
+      </div>
       <div class="liv-sub">
         <button class="secondary-btn b2b-sub-btn" data-vue="fiches" onclick="b2bNav('fiches')">🏢 Fiches</button>
         <button class="secondary-btn b2b-sub-btn" data-vue="depots" onclick="b2bNav('depots')">📦 Dépôts-ventes</button>
@@ -900,6 +915,7 @@
           <thead><tr><th>Produit</th><th>Prix boutique</th><th>Prix B2B</th><th>Remise</th><th>Stock</th></tr></thead>
           <tbody id="b2b-tarifs-body"></tbody>
         </table>
+      </div>
       </div>
     </section>
 

@@ -428,6 +428,7 @@ function showView(viewName) {
   } else if (viewName === "livraisons") {
     renderLivraisonsView();
   } else if (viewName === "b2b") {
+    if (!applyViewLock("b2b")) return; // ✅ code obligatoire
     renderB2BView();
   } else if (viewName === "pro") {
     renderProView();
@@ -3398,6 +3399,7 @@ function lockPro() {
   renderCoffreView();
   applyViewLock("produits");
   applyViewLock("dashboard");
+  applyViewLock("b2b");
 }
 
 // ✅ Verrou des onglets Produits et Tableau de bord (même code, même déverrouillage)
