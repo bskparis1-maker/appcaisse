@@ -1259,3 +1259,14 @@ tr.relance-faite td { opacity: 0.6; }
 .b2b-sub-btn.active, .b2b-period-btn.active, #b2b-seg-statut .active { background: #111827; color: #fff; border-color: #111827; }
 .liv-filtres-select { padding: 6px 8px; border-radius: 7px; border: 1px solid #d1d5db; font-size: 14px; background: #fff; }
 #b2b-depots-liste table input { padding: 4px 6px; border-radius: 7px; border: 1px solid #d1d5db; }
+
+/* ✅ Caisse : encaissé aujourd'hui par mode */
+.cash-box-today {
+  margin: 6px 0 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px dashed #a7f3d0;
+  font-size: 13px;
+  color: #374151;
+}

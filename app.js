@@ -3910,7 +3910,26 @@ function computeCoffreBalance() {
   }, 0);
 }
 
+// ✅ Encaissé aujourd'hui par mode (ventes caisse + livraisons + règlements de crédit)
+function renderCaisseToday() {
+  const box = document.getElementById("caisse-today");
+  if (!box) return;
+  const jour = todayLocalStr();
+  const parMode = { cash: 0, wave: 0, orange: 0 };
+  let nb = 0;
+  (sales || []).forEach((s) => {
+    if (dateKeyOf(s.date) !== jour) return;
+    const m = isCashPayment(s.paymentMethod) ? "cash" : s.paymentMethod === "orange" ? "orange" : s.paymentMethod === "wave" ? "wave" : "cash";
+    parMode[m] += Number(s.total) || 0;
+    nb++;
+  });
+  const total = parMode.cash + parMode.wave + parMode.orange;
+  box.innerHTML = `<strong>Encaissé aujourd'hui : ${fmt(total)} FCFA</strong> <small>(${nb} vente${nb > 1 ? "s" : ""})</small><br>` +
+    `💵 Espèces ${fmt(parMode.cash)} • 📱 Wave ${fmt(parMode.wave)} • 🟠 Orange Money ${fmt(parMode.orange)}`;
+}
+
 function renderCaisseBox() {
+  renderCaisseToday();
   const el = document.getElementById("caisse-balance");
   if (!el) return;
   const bal = computeCaisseBalance();
