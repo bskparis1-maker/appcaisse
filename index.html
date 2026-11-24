@@ -40,14 +40,18 @@
 
       <!-- ✅ ARGENT DISPONIBLE DANS LA CAISSE -->
       <div class="cash-box">
-        <div class="cash-box-label">💵 Disponible dans la caisse (espèces)</div>
-        <div class="cash-box-value"><span id="caisse-balance">0</span> FCFA</div>
-        <div class="cash-box-today" id="caisse-today"></div>
+        <div class="cash-box-label">💰 Total de la caisse (tous modes de paiement)</div>
+        <div class="cash-box-value"><span id="caisse-total">0</span> FCFA</div>
+        <div class="cash-box-today" id="caisse-today">
+          💵 Espèces (tiroir) <strong><span id="caisse-balance">0</span></strong> •
+          📱 Wave <strong id="caisse-wave">0</strong> •
+          🟠 Orange Money <strong id="caisse-orange">0</strong>
+        </div>
         <div class="cash-box-sub" id="caisse-balance-sub"></div>
       </div>
       <div class="cash-actions">
         <button class="primary-btn" onclick="openDepositModal()">🔐 Faire un dépôt dans le coffre</button>
-        <button class="secondary-btn" onclick="openCaisseCountModal()">Compter / ajuster la caisse</button>
+        <button class="secondary-btn" onclick="openCaisseCountModal()">Compter les espèces / ajuster</button>
       </div>
 
       <div class="payment-section">
@@ -107,8 +111,14 @@
 
       <h3>Client</h3>
       <div>
-        <label for="client-select">Compte client :</label>
-        <select id="client-select"></select>
+        <label for="client-picker-input">Compte client :</label>
+        <!-- ✅ recherche du client (remplace la longue liste déroulante) -->
+        <div class="client-picker">
+          <div id="client-picked" class="client-picked hidden"></div>
+          <input type="search" id="client-picker-input" placeholder="Tape le nom ou le numéro du client…" autocomplete="off" inputmode="search" />
+          <div id="client-picker-list" class="client-picker-list hidden"></div>
+        </div>
+        <select id="client-select" class="hidden"></select>
         <button class="secondary-btn" onclick="openAddClientModal()">
           Nouveau client
         </button>

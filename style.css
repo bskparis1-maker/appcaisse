@@ -1270,3 +1270,45 @@ tr.relance-faite td { opacity: 0.6; }
   font-size: 13px;
   color: #374151;
 }
+
+/* ✅ Caisse : recherche du compte client */
+.client-picker { position: relative; max-width: 420px; margin: 4px 0 8px; }
+.client-picker input {
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+  font-size: 15px;
+}
+.client-picked {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  font-size: 14px;
+}
+.client-picked .secondary-btn { margin: 0 0 0 6px; }
+.client-picker-list {
+  position: absolute;
+  left: 0; right: 0; top: 100%;
+  z-index: 40;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.15);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.client-picker-list button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 1px solid #f3f4f6;
+  background: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+.client-picker-list button:hover { background: #f9fafb; }
+.client-picker-list .client-picker-new { color: #c2410c; font-weight: 600; }

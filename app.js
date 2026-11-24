@@ -945,6 +945,7 @@ function renderClientSelect() {
   if (current && clients.some((c) => String(c.id) === String(current))) {
     select.value = current;
   }
+  renderClientPicker();
 }
 
 // ✅ Nouveau client : une seule fenêtre + alerte si le numéro existe déjà
@@ -969,10 +970,12 @@ function formatClientPhone(phone) {
 
 let clientFormDuplicate = null;
 
-function openAddClientModal() {
+function openAddClientModal(prefill) {
   const $ = (id) => document.getElementById(id);
-  $("client-form-name").value = "";
-  $("client-form-phone").value = "";
+  const p = typeof prefill === "string" ? prefill.trim() : "";
+  const estNumero = p && clientPhoneKey(p).length >= 7 && !/[a-zA-Z]/.test(p);
+  $("client-form-name").value = p && !estNumero ? p : "";
+  $("client-form-phone").value = estNumero ? p : "";
   $("client-form-birthdate").value = "";
   $("client-form-error").classList.add("hidden");
   checkClientFormDuplicate();
@@ -1010,6 +1013,67 @@ function selectClientInCaisse(clientId) {
   renderClientSelect();
   const select = document.getElementById("client-select");
   if (select) { select.value = String(clientId); renderCart(); }
+  renderClientPicker();
+}
+
+// ✅ Choix du client en caisse : on tape le nom ou le numéro (fini la liste de 5 000 noms)
+const sansAccent = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+function renderClientPicker() {
+  const select = document.getElementById("client-select");
+  const picked = document.getElementById("client-picked");
+  const input = document.getElementById("client-picker-input");
+  if (!select || !picked || !input) return;
+  const c = select.value ? (clients || []).find((x) => String(x.id) === String(select.value)) : null;
+  if (c) {
+    picked.innerHTML = `👤 <strong>${proEscape(c.name)}</strong>${c.phone ? " • " + proEscape(c.phone) : ""}` +
+      `${isClientBirthdaySoon(c) ? ` <span class="badge pos">🎂 -30 %</span>` : ""}` +
+      ` <button type="button" class="secondary-btn small-btn" onclick="clientPickerClear()">✕ Changer</button>`;
+    picked.classList.remove("hidden");
+    input.classList.add("hidden");
+  } else {
+    picked.classList.add("hidden");
+    input.classList.remove("hidden");
+  }
+  document.getElementById("client-picker-list")?.classList.add("hidden");
+}
+
+function clientPickerSearch() {
+  const input = document.getElementById("client-picker-input");
+  const list = document.getElementById("client-picker-list");
+  const q = input.value.trim();
+  if (q.length < 2) { list.classList.add("hidden"); list.innerHTML = ""; return; }
+  const qn = sansAccent(q);
+  const qTel = clientPhoneKey(q);
+  const res = (clients || []).filter((c) =>
+    sansAccent(c.name).includes(qn) || (qTel.length >= 3 && clientPhoneKey(c.phone).includes(qTel)))
+    .sort((a, b) => (sansAccent(a.name).startsWith(qn) ? 0 : 1) - (sansAccent(b.name).startsWith(qn) ? 0 : 1) ||
+      String(a.name).localeCompare(String(b.name), "fr"))
+    .slice(0, 8);
+  list.innerHTML = res.map((c) =>
+    `<button type="button" onclick="clientPickerChoose('${proEscape(String(c.id))}')">` +
+    `<strong>${proEscape(c.name)}</strong> <small>${proEscape(c.phone || "")}</small>${isClientBirthdaySoon(c) ? " 🎂" : ""}</button>`).join("") +
+    (res.length ? "" : `<div class="help-text" style="padding:6px 8px;">Aucun client trouvé.</div>`) +
+    `<button type="button" class="client-picker-new" onclick="openAddClientModal(${proEscape(JSON.stringify(q))})">➕ Nouveau client « ${proEscape(q)} »</button>`;
+  list.classList.remove("hidden");
+}
+
+function clientPickerChoose(id) {
+  const select = document.getElementById("client-select");
+  if (!select) return;
+  if (![...select.options].some((o) => o.value === String(id))) renderClientSelect();
+  select.value = String(id);
+  document.getElementById("client-picker-input").value = "";
+  renderClientPicker();
+  renderCart();
+}
+
+function clientPickerClear() {
+  const select = document.getElementById("client-select");
+  if (select) select.value = "";
+  renderClientPicker();
+  renderCart();
+  setTimeout(() => document.getElementById("client-picker-input")?.focus(), 50);
 }
 
 function saveClientFromModal(e) {
@@ -3910,35 +3974,38 @@ function computeCoffreBalance() {
   }, 0);
 }
 
-// ✅ Encaissé aujourd'hui par mode (ventes caisse + livraisons + règlements de crédit)
-function renderCaisseToday() {
-  const box = document.getElementById("caisse-today");
-  if (!box) return;
-  const jour = todayLocalStr();
-  const parMode = { cash: 0, wave: 0, orange: 0 };
-  let nb = 0;
+// ✅ Wave / Orange Money encaissés depuis le dernier comptage (même période que les espèces)
+function computeCaisseMobile() {
+  const t0 = new Date(getCaisseBaseline().at).getTime();
+  const r = { wave: 0, orange: 0 };
   (sales || []).forEach((s) => {
-    if (dateKeyOf(s.date) !== jour) return;
-    const m = isCashPayment(s.paymentMethod) ? "cash" : s.paymentMethod === "orange" ? "orange" : s.paymentMethod === "wave" ? "wave" : "cash";
-    parMode[m] += Number(s.total) || 0;
-    nb++;
+    const t = new Date(s.date).getTime();
+    if (isNaN(t) || t <= t0) return;
+    if (s.paymentMethod === "wave") r.wave += Number(s.total) || 0;
+    else if (s.paymentMethod === "orange") r.orange += Number(s.total) || 0;
   });
-  const total = parMode.cash + parMode.wave + parMode.orange;
-  box.innerHTML = `<strong>Encaissé aujourd'hui : ${fmt(total)} FCFA</strong> <small>(${nb} vente${nb > 1 ? "s" : ""})</small><br>` +
-    `💵 Espèces ${fmt(parMode.cash)} • 📱 Wave ${fmt(parMode.wave)} • 🟠 Orange Money ${fmt(parMode.orange)}`;
+  return r;
 }
 
 function renderCaisseBox() {
-  renderCaisseToday();
   const el = document.getElementById("caisse-balance");
   if (!el) return;
-  const bal = computeCaisseBalance();
-  el.textContent = fmt(bal);
-  el.parentElement.classList.toggle("negative", bal < 0);
+  const especes = computeCaisseBalance();
+  const mobile = computeCaisseMobile();
+  const total = especes + mobile.wave + mobile.orange;
+  el.textContent = fmt(especes);
+  const set = (id, v) => { const x = document.getElementById(id); if (x) x.textContent = v; };
+  set("caisse-wave", fmt(mobile.wave));
+  set("caisse-orange", fmt(mobile.orange));
+  const tot = document.getElementById("caisse-total");
+  if (tot) {
+    tot.textContent = fmt(total);
+    tot.parentElement.classList.toggle("negative", total < 0);
+  }
   const sub = document.getElementById("caisse-balance-sub");
   if (sub) {
     const at = new Date(getCaisseBaseline().at);
-    sub.innerHTML = `Ventes en espèces depuis le dernier comptage (${at.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}), moins les dépôts au coffre et les frais payés avec la caisse.<br>${vaultStatusHtml()}`;
+    sub.innerHTML = `Depuis le dernier comptage (${at.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}) : ventes de tous les modes de paiement (caisse, livraisons, crédits), moins les dépôts au coffre et les frais payés avec la caisse. Seules les espèces se comptent et se déposent au coffre.<br>${vaultStatusHtml()}`;
   }
 }
 
@@ -4863,6 +4930,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const discountInput = document.getElementById("cart-discount");
   if (discountInput) discountInput.addEventListener("input", renderCart);
+
+  // ✅ recherche du client en caisse
+  document.getElementById("client-picker-input")?.addEventListener("input", clientPickerSearch);
+  document.getElementById("client-picker-input")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); document.querySelector("#client-picker-list button")?.click(); }
+    if (e.key === "Escape") { e.target.value = ""; clientPickerSearch(); }
+  });
 
   // ✅ formulaire nouveau client
   document.getElementById("client-form-phone")?.addEventListener("input", checkClientFormDuplicate);
