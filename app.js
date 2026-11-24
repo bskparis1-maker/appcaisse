@@ -873,6 +873,7 @@ function renderCart() {
   if (cart.length === 0) {
     container.textContent = "Panier vide.";
     totalSpan.textContent = "0";
+    updateMonnaie();
     return;
   }
 
@@ -897,7 +898,61 @@ function renderCart() {
   });
 
   const totals = calculateCartTotals();
-  totalSpan.textContent = totals.finalTotal;
+  totalSpan.textContent = fmt(totals.finalTotal);
+  // détail des remises sous le total
+  const detail = document.getElementById("cart-total-detail");
+  if (detail) {
+    const rem = totals.promoDiscount + totals.manualDiscount + totals.birthdayDiscount;
+    detail.textContent = rem > 0
+      ? `Avant remise ${fmt(totals.baseTotal)} F • remise −${fmt(rem)} F${totals.isBirthdayClient ? " (anniversaire −30 %)" : ""}`
+      : "";
+  }
+  updateMonnaie();
+}
+
+// =====================================================================
+// ✅ ENCAISSEMENT : mode de paiement + monnaie à rendre
+// =====================================================================
+function setPaymentMode(mode) {
+  const select = document.getElementById("payment-method");
+  if (select) select.value = mode;
+  document.querySelectorAll(".pay-mode").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+  document.getElementById("cash-zone")?.classList.toggle("hidden", mode !== "cash");
+  updateMonnaie();
+}
+
+// billets proposés : montant exact puis les arrondis au-dessus
+function montantsRapides(total) {
+  if (!(total > 0)) return [];
+  const vals = [total];
+  [1000, 5000, 10000].forEach((pas) => vals.push(Math.ceil(total / pas) * pas));
+  [20000, 50000, 100000].forEach((b) => { if (b > total) vals.push(b); });
+  return [...new Set(vals)].filter((v) => v >= total).sort((a, b) => a - b).slice(0, 4);
+}
+
+function choisirMontantRecu(v) {
+  const input = document.getElementById("cash-recu");
+  if (input) input.value = v;
+  updateMonnaie();
+}
+
+function updateMonnaie() {
+  const out = document.getElementById("cash-rendu");
+  const quick = document.getElementById("cash-quick");
+  const input = document.getElementById("cash-recu");
+  if (!out || !input) return;
+  const total = cart.length ? calculateCartTotals().finalTotal : 0;
+  if (quick) quick.innerHTML = montantsRapides(total).map((v) =>
+    `<button type="button" onclick="choisirMontantRecu(${v})">${v === total ? "Montant exact" : fmt(v) + " F"}</button>`).join("");
+  const recu = Number(input.value) || 0;
+  if (!total || input.value === "") { out.className = "rendu"; out.innerHTML = ""; return; }
+  if (recu >= total) {
+    out.className = "rendu ok";
+    out.innerHTML = `Monnaie à rendre<strong>${fmt(recu - total)} FCFA</strong>`;
+  } else {
+    out.className = "rendu manque";
+    out.innerHTML = `Il manque<strong>${fmt(total - recu)} FCFA</strong>`;
+  }
 }
 
 function updateCartItemPrice(index, newPrice) {
@@ -915,6 +970,11 @@ function removeCartItem(index) {
 
 function clearCart() {
   cart = [];
+  const recu = document.getElementById("cash-recu");
+  if (recu) recu.value = "";
+  const remise = document.getElementById("remise-details");
+  if (remise) remise.open = false;
+  setPaymentMode("cash");
   const discountInput = document.getElementById("cart-discount");
   const discountReasonInput = document.getElementById("cart-discount-reason");
   if (discountInput) {
@@ -1132,6 +1192,17 @@ function confirmSale() {
     return;
   }
 
+  // ✅ espèces : le montant reçu doit couvrir le total (s'il est saisi)
+  const modePaiement = document.getElementById("payment-method")?.value || "cash";
+  const recuInput = document.getElementById("cash-recu");
+  const montantRecu = recuInput && recuInput.value !== "" ? Number(recuInput.value) || 0 : null;
+  const totalAPayer = calculateCartTotals().finalTotal;
+  if (!isCreditSale && modePaiement === "cash" && montantRecu !== null && montantRecu < totalAPayer) {
+    alert(`Montant reçu insuffisant : il manque ${fmt(totalAPayer - montantRecu)} FCFA.`);
+    recuInput.focus();
+    return;
+  }
+
   // Vérif stock
   for (const item of cart) {
     const product = products.find((p) => p.id === item.productId);
@@ -1266,7 +1337,14 @@ function confirmSale() {
   refreshProIfVisible(); // ✅ met aussi à jour la caisse
   updateNavBadges();
 
-  alert("Vente enregistrée !");
+  // ✅ montant reçu / monnaie (affichés sur le ticket de cette vente)
+  if (paymentMethod === "cash" && montantRecu !== null) {
+    sale.montantRecu = montantRecu;
+    sale.monnaie = montantRecu - sale.total;
+  }
+  alert(sale.monnaie > 0
+    ? `✅ Vente enregistrée !\n\nMonnaie à rendre : ${fmt(sale.monnaie)} FCFA`
+    : "✅ Vente enregistrée !");
 }
 // ================== TICKET DE CAISSE ==================
 // ✅ Ticket de caisse (format imprimante ticket 80 mm, aussi lisible sur téléphone)
@@ -1465,6 +1543,7 @@ function openReceiptWindow(sale) {
     recap,
     total: sale.total,
     apresTotal: `<div class="row small"><span>Payé par</span><span>${proEscape(formatPaymentMethod(sale.paymentMethod))}</span></div>` +
+      (sale.montantRecu != null ? `<div class="row small"><span>Reçu</span><span>${fmt(sale.montantRecu)} F</span></div><div class="row small"><span>Rendu</span><span>${fmt(sale.monnaie || 0)} F</span></div>` : "") +
       (sale.discountReason && totalRemises ? `<div class="small muted">${proEscape(sale.discountReason)}</div>` : "") +
       (totalRemises ? `<div class="encadre">🎉 Vous avez économisé ${fmt(totalRemises)} FCFA</div>` : ""),
     bloc: ((sale.clientName || client) ? `<div class="row small"><span>Client</span><span>${proEscape(client ? client.name : sale.clientName)}</span></div>` : "") +
@@ -5013,6 +5092,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const discountInput = document.getElementById("cart-discount");
   if (discountInput) discountInput.addEventListener("input", renderCart);
+
+  // ✅ monnaie à rendre
+  document.getElementById("cash-recu")?.addEventListener("input", updateMonnaie);
+  setPaymentMode("cash");
 
   // ✅ recherche du client en caisse
   document.getElementById("client-picker-input")?.addEventListener("input", clientPickerSearch);

@@ -77,63 +77,61 @@
 
       <h3>Panier</h3>
       <div id="cart-list">Panier vide.</div>
-      <p class="total-label">
-        Total : <strong><span id="cart-total">0</span> FCFA</strong>
-      </p>
-
-      <div class="payment-section">
-        <h3>Paiement & remise</h3>
-
-        <label>
-          Mode de paiement :
-          <select id="payment-method">
-            <option value="cash">Espèces</option>
-            <option value="orange">Orange Money</option>
-            <option value="wave">Wave</option>
-          </select>
-        </label>
-
-        <div class="discount-box">
-          <label>
-            Remise (FCFA) :
-            <input type="number" id="cart-discount" value="0" min="0" />
-          </label>
-          <label>
-            Raison de la remise :
-            <input
-              type="text"
-              id="cart-discount-reason"
-              placeholder="Ex : geste commercial, famille…"
-            />
-          </label>
+      <!-- ✅ ENCAISSEMENT (simplifié) -->
+      <div class="checkout">
+        <div class="checkout-block">
+          <div class="checkout-label">👤 Client <small>(facultatif, pour la fidélité et l'anniversaire)</small></div>
+          <div class="client-picker">
+            <div id="client-picked" class="client-picked hidden"></div>
+            <input type="search" id="client-picker-input" placeholder="Tape le nom ou le numéro du client…" autocomplete="off" inputmode="search" />
+            <div id="client-picker-list" class="client-picker-list hidden"></div>
+          </div>
+          <select id="client-select" class="hidden"></select>
+          <button class="secondary-btn small-btn" onclick="openAddClientModal()">➕ Nouveau client</button>
         </div>
-      </div>
 
-      <h3>Client</h3>
-      <div>
-        <label for="client-picker-input">Compte client :</label>
-        <!-- ✅ recherche du client (remplace la longue liste déroulante) -->
-        <div class="client-picker">
-          <div id="client-picked" class="client-picked hidden"></div>
-          <input type="search" id="client-picker-input" placeholder="Tape le nom ou le numéro du client…" autocomplete="off" inputmode="search" />
-          <div id="client-picker-list" class="client-picker-list hidden"></div>
+        <details class="checkout-block remise-details" id="remise-details">
+          <summary>🏷️ Ajouter une remise</summary>
+          <div class="discount-box">
+            <label>Remise (FCFA) :
+              <input type="number" id="cart-discount" value="0" min="0" inputmode="numeric" />
+            </label>
+            <label>Raison de la remise :
+              <input type="text" id="cart-discount-reason" placeholder="Ex : geste commercial, famille…" />
+            </label>
+          </div>
+        </details>
+
+        <div class="checkout-total">
+          <span>Total à payer</span>
+          <strong><span id="cart-total">0</span> FCFA</strong>
         </div>
-        <select id="client-select" class="hidden"></select>
-        <button class="secondary-btn" onclick="openAddClientModal()">
-          Nouveau client
-        </button>
-      </div>
+        <div id="cart-total-detail" class="help-text center"></div>
 
-      <div style="margin-top:12px;">
-        <button class="primary-btn" onclick="confirmSale()">
-          Valider la vente
-        </button>
-        <button class="secondary-btn" onclick="printTicket()">
-          Imprimer le ticket
-        </button>
-        <button class="danger-btn" onclick="clearCart()">
-          Annuler le panier
-        </button>
+        <div class="checkout-label">💳 Mode de paiement</div>
+        <div class="pay-modes">
+          <button type="button" class="pay-mode active" data-mode="cash" onclick="setPaymentMode('cash')">💵 Espèces</button>
+          <button type="button" class="pay-mode" data-mode="wave" onclick="setPaymentMode('wave')">📱 Wave</button>
+          <button type="button" class="pay-mode" data-mode="orange" onclick="setPaymentMode('orange')">🟠 Orange Money</button>
+        </div>
+        <select id="payment-method" class="hidden">
+          <option value="cash">Espèces</option>
+          <option value="orange">Orange Money</option>
+          <option value="wave">Wave</option>
+        </select>
+
+        <div id="cash-zone" class="checkout-block">
+          <label class="checkout-label" for="cash-recu">💵 Montant reçu du client</label>
+          <input type="number" id="cash-recu" class="cash-recu" min="0" inputmode="numeric" placeholder="Ex : 25000" />
+          <div id="cash-quick" class="quick-amounts"></div>
+          <div id="cash-rendu" class="rendu"></div>
+        </div>
+
+        <button class="primary-btn btn-valider" onclick="confirmSale()">✅ Valider la vente</button>
+        <div class="checkout-secondary">
+          <button class="secondary-btn" onclick="printTicket()">🧾 Ticket de la dernière vente</button>
+          <button class="danger-btn" onclick="clearCart()">Annuler le panier</button>
+        </div>
       </div>
     </section>
 

@@ -1318,3 +1318,88 @@ tr.relance-faite td { opacity: 0.6; }
 .ticket-overlay-actions { display: flex; gap: 8px; justify-content: flex-end; margin-bottom: 6px; }
 .ticket-overlay-actions button { margin: 0; }
 #ticket-overlay-frame { width: 100%; height: 78vh; border: 1px solid #e5e7eb; border-radius: 10px; background: #f3f4f6; }
+
+/* ✅ Encaissement simplifié */
+.checkout {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.checkout-block { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 10px 12px; }
+.checkout-label { font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 6px; display: block; }
+.checkout-label small { font-weight: 400; color: #6b7280; }
+.checkout .client-picker { margin: 0 0 6px; max-width: none; }
+.remise-details summary { cursor: pointer; font-weight: 600; color: #374151; font-size: 14px; }
+.remise-details[open] summary { margin-bottom: 8px; }
+.checkout-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #111827;
+  color: #fff;
+  font-size: 16px;
+}
+.checkout-total strong { font-size: 28px; }
+.center { text-align: center; }
+.pay-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pay-mode {
+  padding: 14px 6px;
+  border-radius: 12px;
+  border: 2px solid #e5e7eb;
+  background: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pay-mode.active { border-color: #f97316; background: #fff7ed; color: #9a3412; }
+.cash-recu {
+  width: 100%;
+  padding: 12px;
+  font-size: 22px;
+  font-weight: 700;
+  border-radius: 10px;
+  border: 2px solid #d1d5db;
+  text-align: center;
+}
+.quick-amounts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.quick-amounts button {
+  flex: 1 1 22%;
+  padding: 10px 6px;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rendu:empty { display: none; }
+.rendu {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 15px;
+  font-weight: 600;
+}
+.rendu strong { font-size: 26px; }
+.rendu.ok { background: #dcfce7; color: #14532d; border: 2px solid #22c55e; }
+.rendu.manque { background: #fee2e2; color: #7f1d1d; border: 2px solid #ef4444; }
+.btn-valider { width: 100%; padding: 16px; font-size: 18px; margin: 0; }
+.checkout-secondary { display: flex; gap: 8px; flex-wrap: wrap; }
+.checkout-secondary button { flex: 1; margin: 0; }
+@media (max-width: 640px) {
+  .checkout-total strong { font-size: 24px; }
+  .pay-mode { padding: 12px 4px; font-size: 14px; }
+}
+.quick-amounts button { white-space: nowrap; font-size: 13px; }
+.rendu strong { white-space: nowrap; }
+@media (max-width: 640px) { .rendu strong { font-size: 22px; } }
