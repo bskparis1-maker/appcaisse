@@ -1421,8 +1421,9 @@ function buildTicketHtml(o) {
   .actions { text-align: center; margin: 12px 0 4px; }
   .actions button { padding: 8px 16px; font-size: 14px; border-radius: 999px; border: 1px solid #111; background: #111; color: #fff; cursor: pointer; }
   @media print {
-    html, body { width: 80mm; background: #fff; }
-    .ticket { width: 72mm; margin: 0 auto; padding: 2mm 0 6mm; }
+    /* calé à gauche sur 72 mm : la tête d'impression commence au bord gauche de la zone imprimable */
+    html, body { width: 72mm; background: #fff; }
+    .ticket { width: 72mm; margin: 0; padding: 2mm 0 6mm; }
     .actions { display: none; }
     /* imprimante thermique : tout en noir franc (le gris sort trop pâle) */
     body, .muted, .slogan, .item-calc, .small { color: #000 !important; }
