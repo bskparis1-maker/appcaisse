@@ -1387,10 +1387,11 @@ function buildTicketHtml(o) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(o.titre || "Ticket")} ${esc(o.numero || "")} - ${BOUTIQUE.nom}</title>
 <style>
-  @page { size: 80mm auto; margin: 3mm; }
+  /* POS-80 : papier 80 mm, zone imprimable 72 mm. Marges à 0 = pas d'en-tête / pied de page du navigateur */
+  @page { size: 80mm 297mm; margin: 0; }
   * { box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 13px; color: #111; margin: 0; background: #f3f4f6; }
-  .ticket { width: 74mm; max-width: 100%; margin: 10px auto; background: #fff; padding: 12px 10px 14px; }
+  .ticket { width: 72mm; max-width: 100%; margin: 10px auto; background: #fff; padding: 10px 6px 14px; }
   .center { text-align: center; }
   .right { text-align: right; }
   .logo { width: 64px; height: 64px; object-fit: cover; border-radius: 14px; }
@@ -1420,11 +1421,14 @@ function buildTicketHtml(o) {
   .actions { text-align: center; margin: 12px 0 4px; }
   .actions button { padding: 8px 16px; font-size: 14px; border-radius: 999px; border: 1px solid #111; background: #111; color: #fff; cursor: pointer; }
   @media print {
-    body { background: #fff; }
-    .ticket { margin: 0; width: 100%; padding: 0; }
+    html, body { width: 80mm; background: #fff; }
+    .ticket { width: 72mm; margin: 0 auto; padding: 2mm 0 6mm; }
     .actions { display: none; }
+    /* imprimante thermique : tout en noir franc (le gris sort trop pâle) */
+    body, .muted, .slogan, .item-calc, .small { color: #000 !important; }
   }
 </style>
+<style id="page-size"></style>
 </head>
 <body>
   <div class="ticket">
@@ -1466,6 +1470,19 @@ function buildTicketHtml(o) {
 
     <div class="actions"><button onclick="window.print()">🖨️ Imprimer</button></div>
   </div>
+<script>
+  /* longueur du papier = longueur du ticket (pas de grand blanc après le ticket) */
+  function tailleTicket() {
+    var t = document.querySelector(".ticket"), a = document.querySelector(".actions");
+    if (!t) return;
+    var px = t.getBoundingClientRect().height - (a ? a.getBoundingClientRect().height : 0);
+    var mm = Math.ceil(px * 25.4 / 96) + 12;
+    document.getElementById("page-size").textContent = "@page { size: 80mm " + mm + "mm; margin: 0; }";
+  }
+  window.addEventListener("load", tailleTicket);
+  window.addEventListener("beforeprint", tailleTicket);
+  tailleTicket();
+<\/script>
 </body>
 </html>`;
 }
