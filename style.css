@@ -1409,3 +1409,9 @@ tr.vente-remboursement td { background: #fef2f2; }
 .conditions-rappel { padding: 8px 10px; border-radius: 10px; background: #fff7ed; border: 1px solid #fdba74; font-size: 13px; margin-bottom: 8px; }
 .refund-table input { width: 70px; padding: 4px 6px; border-radius: 7px; border: 1px solid #d1d5db; }
 .modal-content select { width: 100%; }
+
+/* ✅ Imprimante POS-80 */
+.pos-panel summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.pos-panel[open] summary { margin-bottom: 8px; }
+.pos-option { display: block; font-size: 14px; margin: 6px 0; }
+.pos-option select { margin-left: 6px; padding: 4px 6px; border-radius: 7px; border: 1px solid #d1d5db; }

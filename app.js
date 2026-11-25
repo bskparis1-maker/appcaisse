@@ -1361,6 +1361,7 @@ const BOUTIQUE = {
 // o = { titre, numero, date, infos: [[label, valeur]], lignes: [{ nom, qte, prix }], recap: [[label, valeur, cls]],
 //       totalLabel, total, apresTotal (html), bloc (html), pied (html), noteBas (html) }
 function buildTicketHtml(o) {
+  window.__posDernierTicket = o; // ✅ gardé pour l'impression directe sur la POS-80
   const esc = (v) => proEscape(v);
   const d = new Date(o.date || Date.now());
   const dateStr = isNaN(d.getTime()) ? "" : d.toLocaleDateString("fr-FR");
@@ -1419,7 +1420,8 @@ function buildTicketHtml(o) {
   .qrs div { font-size: 10px; text-align: center; }
   .qrs img { width: 78px; height: 78px; display: block; margin: 0 auto 2px; }
   .actions { text-align: center; margin: 12px 0 4px; }
-  .actions button { padding: 8px 16px; font-size: 14px; border-radius: 999px; border: 1px solid #111; background: #111; color: #fff; cursor: pointer; }
+  .actions button { padding: 8px 16px; font-size: 14px; border-radius: 999px; border: 1px solid #111; background: #111; color: #fff; cursor: pointer; margin: 3px; }
+  .actions button.pos { background: #f97316; border-color: #f97316; }
   @media print {
     /* calé à gauche sur 72 mm : la tête d'impression commence au bord gauche de la zone imprimable */
     html, body { width: 72mm; background: #fff; }
@@ -1469,7 +1471,10 @@ function buildTicketHtml(o) {
       </div>
     </div>
 
-    <div class="actions"><button onclick="window.print()">🖨️ Imprimer</button></div>
+    <div class="actions">
+      <button onclick="window.print()">🖨️ Imprimer</button>
+      <button class="pos" onclick="try { (window.opener || window.parent).posImprimerDernier(); } catch (e) { alert('Impression POS-80 impossible depuis cette fenêtre.'); }">🧾 Imprimer sur POS-80</button>
+    </div>
   </div>
 <script>
   /* longueur du papier = longueur du ticket (pas de grand blanc après le ticket) */
@@ -1489,6 +1494,11 @@ function buildTicketHtml(o) {
 }
 
 function openTicketWindow(html) {
+  // ✅ impression directe sur la POS-80 (réglage « Imprimer directement ») : pas de fenêtre
+  if (typeof posReglages === "function" && posReglages().direct && posConnecte()) {
+    posImprimer(window.__posDernierTicket);
+    return;
+  }
   const win = window.open("", "_blank", "width=420,height=760");
   if (!win) return openTicketOverlay(html); // pop-up bloquée → ticket affiché dans l'app
   win.document.open();
@@ -1505,6 +1515,7 @@ function openTicketOverlay(html) {
   box.innerHTML = `<div class="modal-content ticket-overlay-content">
       <div class="ticket-overlay-actions">
         <button class="primary-btn" type="button" id="ticket-overlay-print">🖨️ Imprimer</button>
+        <button class="secondary-btn" type="button" onclick="posImprimerDernier()">🧾 POS-80</button>
         <button class="secondary-btn" type="button" id="ticket-overlay-close">Fermer</button>
       </div>
       <iframe id="ticket-overlay-frame" title="Ticket"></iframe>

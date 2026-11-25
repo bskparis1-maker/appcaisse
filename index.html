@@ -133,6 +133,34 @@
           <button class="danger-btn" onclick="clearCart()">Annuler le panier</button>
         </div>
       </div>
+    
+      <!-- ✅ IMPRIMANTE DE TICKETS POS-80 (impression directe) -->
+      <details class="payment-section pos-panel" id="pos-panel">
+        <summary>🖨️ Imprimante de tickets (POS-80) : <span id="pos-etat">…</span></summary>
+        <p class="help-text">Le ticket est envoyé directement à l'imprimante par le câble USB, sans la fenêtre d'impression du Chromebook.
+          La première fois, choisis la POS-80 dans la fenêtre de Chrome ; ensuite la connexion est automatique.</p>
+        <div class="cash-actions">
+          <button class="primary-btn pos-si-deconnecte" onclick="posConnecterUsb()">🔌 Connecter l'imprimante</button>
+          <button class="secondary-btn pos-si-deconnecte" onclick="posConnecterSerie()">Connecter (port série)</button>
+          <button class="primary-btn pos-si-connecte hidden" onclick="posTest()">🧪 Imprimer un test</button>
+          <button class="secondary-btn pos-si-connecte hidden" onclick="posDeconnecter()">Déconnecter</button>
+        </div>
+        <label class="pos-option"><input type="checkbox" id="pos-direct" onchange="posChangerReglage('direct', this.checked)" />
+          <strong>Imprimer directement sur la POS-80</strong> (le ticket sort tout de suite, sans fenêtre)</label>
+        <label class="pos-option"><input type="checkbox" id="pos-accents" onchange="posChangerReglage('accents', this.checked)" />
+          Accents (é, à, ç…) : décoche si le test affiche des signes bizarres</label>
+        <label class="pos-option"><input type="checkbox" id="pos-qr" onchange="posChangerReglage('qr', this.checked)" />
+          QR code du site en bas du ticket</label>
+        <label class="pos-option"><input type="checkbox" id="pos-coupe" onchange="posChangerReglage('coupe', this.checked)" />
+          Couper le papier à la fin</label>
+        <label class="pos-option">Caractères par ligne :
+          <select id="pos-largeur" onchange="posChangerReglage('largeur', this.value)">
+            <option value="48">48 (papier 80 mm, normal)</option>
+            <option value="42">42 (si les lignes débordent)</option>
+            <option value="32">32 (papier 58 mm)</option>
+          </select>
+        </label>
+      </details>
     </section>
 
     <!-- ============ POPUP PROMO ============ -->
@@ -1158,6 +1186,7 @@
   <script src="app.js"></script>
   <script src="livraisons.js"></script>
   <script src="b2b.js"></script>
+  <script src="pos80.js"></script>
 
 
   <!-- ✅ B2B : ENCAISSER UN PAIEMENT -->
