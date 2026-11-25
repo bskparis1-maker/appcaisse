@@ -1411,6 +1411,7 @@ function buildTicketHtml(o) {
   .fort { font-weight: 800; }
   .bloc { font-size: 11.5px; line-height: 1.35; text-align: center; margin-top: 4px; }
   .merci { font-size: 15px; font-weight: 700; margin: 10px 0 2px; }
+  .conditions { margin: 6px 0 8px; padding: 5px 6px; border: 1px dashed #111; border-radius: 6px; font-size: 11px; font-weight: 600; line-height: 1.3; }
   .signature { display: flex; justify-content: space-between; gap: 10px; margin-top: 14px; font-size: 11px; }
   .signature div { flex: 1; border-top: 1px solid #111; padding-top: 3px; text-align: center; margin-top: 26px; }
   .qrs { display: flex; justify-content: center; gap: 14px; margin-top: 8px; }
@@ -1454,6 +1455,7 @@ function buildTicketHtml(o) {
     <div class="line"></div>
     <div class="center">
       ${o.pied || `<div class="merci">Merci pour votre achat 🧡</div>`}
+      <div class="conditions">Pour tout échange ou remboursement, le ticket de caisse est obligatoire et le produit ne doit pas avoir été utilisé.</div>
       <div class="small">Commandez en ligne sur <strong>${BOUTIQUE.site}</strong><br>Livraison partout à Dakar 🛵</div>
       <div class="small muted" style="margin-top:4px;">Ouvert de ${BOUTIQUE.horaires}</div>
       <div class="qrs">
@@ -1535,6 +1537,21 @@ function openReceiptWindow(sale) {
     ? [["Sous-total", fmt(sousTotal) + " F"], ...remises.map(([l, v]) => [l, "- " + fmt(v) + " F", "small"])]
     : [];
   const client = sale.clientId ? (clients || []).find((c) => String(c.id) === String(sale.clientId)) : null;
+  if (isRefundSale(sale)) {
+    openTicketWindow(buildTicketHtml({
+      titre: "TICKET DE REMBOURSEMENT",
+      numero: String(sale.id || "").replace(/\D/g, "").slice(-6),
+      date: sale.date,
+      infos: [["Client", client ? client.name : sale.clientName], ["Motif", refundLabel(sale)]],
+      lignes: lignes.map((l) => ({ ...l, qte: Math.abs(Number(l.qte) || 0) })),
+      recap: [],
+      totalLabel: "REMBOURSÉ",
+      total: Math.abs(Number(sale.total) || 0),
+      apresTotal: `<div class="row small"><span>Remboursé en</span><span>${proEscape(formatPaymentMethod(sale.paymentMethod))}</span></div>`,
+      pied: `<div class="merci">Merci de votre visite 🧡</div>`
+    }));
+    return;
+  }
   openTicketWindow(buildTicketHtml({
     titre: "",
     numero: String(sale.id || "").replace(/\D/g, "").slice(-6),
@@ -2290,7 +2307,8 @@ function getClientStats(c) {
   const k = clientPhoneKey(c.phone);
   const idx = getClientIndex();
   const achats = (idx.byId[String(c.id)] || []).concat(k.length >= 9 ? idx.byPhone[k] || [] : []);
-  const dates = achats.map((s) => s.date).filter((d) => !isNaN(new Date(d).getTime()))
+  const vraisAchats = achats.filter((s) => !isRefundSale(s)); // un remboursement n'est pas un achat
+  const dates = vraisAchats.map((s) => s.date).filter((d) => !isNaN(new Date(d).getTime()))
     .sort((a, b) => new Date(a) - new Date(b));
   const livs = (k.length >= 9 ? idx.livByPhone[k] || [] : []).slice()
     .sort((a, b) => String(a["Créée le"]).localeCompare(String(b["Créée le"])));
@@ -2298,14 +2316,14 @@ function getClientStats(c) {
   const derniere = avecAdresse[avecAdresse.length - 1];
   const total = achats.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
   const dernier = dates[dates.length - 1] || null;
-  const derniereVente = dernier ? achats.filter((s) => s.date === dernier)[0] : null;
+  const derniereVente = dernier ? vraisAchats.filter((s) => s.date === dernier)[0] : null;
   const derniersProduits = derniereVente
     ? (derniereVente.items || []).map((i) => i.name).filter((n) => n && !PRO_NON_PRODUCT_ITEMS.includes(proKey(n)))
     : [];
   return {
-    achats: achats.length,
+    achats: vraisAchats.length,
     total,
-    panier: achats.length ? total / achats.length : 0,
+    panier: vraisAchats.length ? total / vraisAchats.length : 0,
     premier: dates[0] || null,
     dernier,
     derniersProduits,
@@ -2810,20 +2828,177 @@ function updateSalesViewForSelectedDate() {
       clientLabel = sale.clientPhone;
     }
 
+    const rembourse = isRefundSale(sale);
+    const resteARembourser = rembourse ? 0 : refundableLines(sale).reduce((s, l) => s + l.reste, 0);
+    if (rembourse) tr.className = "vente-remboursement";
     tr.innerHTML = `
       <td>${timeStr}</td>
-      <td>${productsHtml}</td>
-      <td>${amount} FCFA</td>
+      <td>${rembourse ? `<strong>↩️ Remboursement</strong><br><small>${proEscape(refundLabel(sale))}</small><br>` : ""}${productsHtml}</td>
+      <td class="${rembourse ? "text-neg" : ""}">${fmt(amount)} FCFA</td>
       <td>${pm}</td>
       <td>
         ${clientLabel}<br>
         <!-- ✅ IMPORTANT: id en string -->
         <button class="secondary-btn" onclick="printSaleTicket('${sale.id}')">🧾 Ticket</button>
+        ${resteARembourser > 0 ? `<button class="secondary-btn" onclick="openRefundModal('${sale.id}')">↩️ Rembourser</button>` : ""}
+        ${!rembourse && resteARembourser === 0 ? `<small class="help-text">entièrement remboursée</small>` : ""}
         <button class="danger-btn" onclick="deleteSale('${sale.id}')">Supprimer</button>
       </td>
     `;
     tbody.appendChild(tr);
   });
+}
+
+// =====================================================================
+// ✅ REMBOURSEMENT d'un produit déjà vendu (n'importe quel jour)
+// =====================================================================
+// Un remboursement = une « vente » négative enregistrée le jour du remboursement :
+//   • elle diminue la caisse, le CA du jour, le total du client et le bénéfice (onglet Pro)
+//   • le produit revient dans le stock
+//   • elle garde la référence de la vente d'origine : [ref:date de la vente]
+const REFUND_TAG = "Remboursement";
+
+function isRefundSale(s) {
+  return (Number(s.total) || 0) < 0 || String(s.discountReason || "").indexOf(REFUND_TAG) === 0;
+}
+function refundRef(sale) { return `[ref:${sale.date}]`; }
+function refundLabel(s) { return String(s.discountReason || "").replace(/\s*\[ref:[^\]]*\]\s*$/, ""); }
+
+// lignes encore remboursables d'une vente : quantité vendue − déjà remboursée
+function refundableLines(sale) {
+  const tag = refundRef(sale);
+  const deja = {};
+  (sales || []).filter((s) => isRefundSale(s) && String(s.discountReason || "").includes(tag))
+    .forEach((s) => (s.items || []).forEach((i) => { deja[proKey(i.name)] = (deja[proKey(i.name)] || 0) + Math.abs(Number(i.qty) || 0); }));
+  const items = (sale.items || []).filter((i) => i.name && !PRO_NON_PRODUCT_ITEMS.includes(proKey(i.name)));
+  // prix réellement payé par pièce (remise répartie au prorata)
+  const brut = (sale.items || []).reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.qty) || 0), 0);
+  const ratio = brut > 0 ? Math.min(1, (Number(sale.total) || 0) / brut) : 1;
+  return items.map((i) => {
+    let prix = Number(i.price) || 0;
+    if (!prix) prix = items.length === 1 && Number(i.qty) ? (Number(sale.total) || 0) / Number(i.qty) : getCatalogPrice(i.name);
+    else prix = prix * ratio;
+    const vendu = Number(i.qty) || 0;
+    const rendu = Math.min(vendu, deja[proKey(i.name)] || 0);
+    deja[proKey(i.name)] = (deja[proKey(i.name)] || 0) - rendu; // même produit sur 2 lignes
+    return { productId: i.productId, nom: i.name, vendu, rendu, reste: vendu - rendu, prix: Math.round(prix) };
+  });
+}
+
+function openRefundModal(saleId) {
+  const sale = (sales || []).find((s) => String(s.id) === String(saleId));
+  if (!sale) return alert("Vente introuvable.");
+  const lignes = refundableLines(sale).filter((l) => l.reste > 0);
+  if (!lignes.length) return alert("Cette vente a déjà été entièrement remboursée.");
+  document.getElementById("refund-modal")?.remove();
+  const d = new Date(sale.date);
+  const box = document.createElement("div");
+  box.id = "refund-modal";
+  box.className = "modal";
+  box.innerHTML = `<div class="modal-content" style="max-width:520px;">
+    <h3 style="margin-top:0;">↩️ Remboursement</h3>
+    <p class="help-text">Vente du ${d.toLocaleDateString("fr-FR")} à ${d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })} • ${fmt(sale.total)} FCFA${sale.clientName ? " • " + proEscape(sale.clientName) : ""}</p>
+    <div class="conditions-rappel">Vérifie : <strong>ticket de caisse présenté</strong> et <strong>produit non utilisé</strong>.</div>
+    <table class="refund-table">
+      <thead><tr><th>Produit</th><th>Payé / pièce</th><th>Vendu</th><th>À rembourser</th></tr></thead>
+      <tbody>${lignes.map((l, i) => `<tr>
+        <td>${proEscape(l.nom)}${l.rendu ? `<br><small class="help-text">déjà remboursé : ${l.rendu}</small>` : ""}</td>
+        <td>${fmt(l.prix)} F</td><td>${l.vendu}</td>
+        <td><input type="number" min="0" max="${l.reste}" value="${lignes.length === 1 ? l.reste : 0}" data-i="${i}" class="refund-qty" /></td>
+      </tr>`).join("")}</tbody>
+    </table>
+    <label>Montant à rembourser (FCFA)</label>
+    <input type="number" id="refund-montant" min="0" />
+    <label>Rembourser en</label>
+    <select id="refund-mode">
+      <option value="cash">💵 Espèces</option><option value="wave">📱 Wave</option><option value="orange">🟠 Orange Money</option>
+    </select>
+    <label>Motif</label>
+    <input type="text" id="refund-motif" placeholder="Ex : ne convient pas, erreur de produit…" />
+    <p class="help-text">Les produits remboursés reviennent dans le stock. Le montant sort de la caisse aujourd'hui.</p>
+    <p id="refund-error" class="pro-error hidden"></p>
+    <div class="modal-actions">
+      <button type="button" class="danger-btn" id="refund-ok" style="margin-top:0;">↩️ Rembourser</button>
+      <button type="button" class="secondary-btn" style="margin-top:0;" onclick="document.getElementById('refund-modal').remove()">Annuler</button>
+    </div>
+  </div>`;
+  document.body.appendChild(box);
+  const $ = (id) => box.querySelector("#" + id);
+  $("refund-mode").value = ["cash", "wave", "orange"].includes(sale.paymentMethod) ? sale.paymentMethod : "cash";
+  let montantModifie = false;
+  const calc = () => {
+    const total = [...box.querySelectorAll(".refund-qty")].reduce((s, inp) => s + (Number(inp.value) || 0) * lignes[inp.dataset.i].prix, 0);
+    if (!montantModifie) $("refund-montant").value = total;
+  };
+  box.querySelectorAll(".refund-qty").forEach((inp) => inp.addEventListener("input", calc));
+  $("refund-montant").addEventListener("input", () => { montantModifie = true; });
+  calc();
+  $("refund-ok").onclick = () => validerRemboursement(sale, lignes, box);
+}
+
+async function validerRemboursement(sale, lignes, box) {
+  const $ = (id) => box.querySelector("#" + id);
+  const err = (m) => { $("refund-error").textContent = m; $("refund-error").classList.remove("hidden"); };
+  const choix = [...box.querySelectorAll(".refund-qty")].map((inp) => ({ ...lignes[inp.dataset.i], q: Number(inp.value) || 0 }))
+    .filter((l) => l.q > 0);
+  for (const l of choix) if (l.q > l.reste) return err(`${l.nom} : maximum ${l.reste}.`);
+  if (!choix.length) return err("Indique au moins un produit à rembourser.");
+  const montant = Number($("refund-montant").value) || 0;
+  if (montant <= 0) return err("Indique le montant à rembourser.");
+  if (montant > Number(sale.total)) return err(`Le montant dépasse le prix payé (${fmt(sale.total)} FCFA).`);
+  const mode = $("refund-mode").value;
+  const motif = $("refund-motif").value.trim();
+
+  box.classList.add("hidden");
+  const ok = await requirePassword({
+    title: "🔒 Remboursement",
+    message: `Rembourser <strong>${fmt(montant)} FCFA</strong> (${choix.map((l) => l.q + " × " + proEscape(l.nom)).join(", ")}) en ${proEscape(formatPaymentMethod(mode))} ?`,
+    messageIsHtml: true,
+    confirmLabel: "Rembourser"
+  });
+  if (!ok) { box.classList.remove("hidden"); return; }
+  box.remove();
+
+  // 1) produits remis en stock
+  choix.forEach((l) => {
+    const p = products.find((x) => x.id === Number(l.productId)) || products.find((x) => proKey(x.name) === proKey(l.nom));
+    if (!p || isServiceProduct(p)) return;
+    const old = Number(p.stock) || 0;
+    p.stock = old + l.q;
+    logStockChangeToSheet({ date: new Date().toISOString(), productId: p.id, productName: p.name, oldStock: old, newStock: p.stock, delta: l.q, reason: `Remboursement${motif ? " : " + motif : ""}` });
+  });
+  saveProducts(products);
+  sendStockToSheet(products);
+
+  // 2) vente négative (sort de la caisse, diminue le CA et le total du client)
+  const d = new Date(sale.date);
+  const refund = {
+    id: Date.now(),
+    date: new Date().toISOString(),
+    baseTotal: -montant,
+    total: -montant,
+    items: choix.map((l) => ({ productId: l.productId || 0, name: l.nom, qty: -l.q, price: l.prix, lineTotal: -l.q * l.prix })),
+    paymentMethod: mode,
+    promoDiscount: 0, manualDiscount: 0, birthdayDiscount: 0, discountAmount: 0,
+    discountReason: `${REFUND_TAG} du ticket du ${d.toLocaleDateString("fr-FR")} ${d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}${motif ? " – " + motif : ""} ${refundRef(sale)}`,
+    clientId: sale.clientId || "",
+    clientName: sale.clientName || "",
+    clientPhone: sale.clientPhone || "",
+    wholesale: false
+  };
+  sales.push(refund);
+  saveSales(sales);
+  sendSaleToSheet(refund);
+  lastTicketSale = refund;
+
+  renderProductsForSale();
+  renderProductsTable();
+  updateSalesViewForSelectedDate();
+  renderClientsTable();
+  loadDashboardStats?.();
+  refreshProIfVisible();
+  updateNavBadges();
+  if (confirm(`✅ Remboursement de ${fmt(montant)} FCFA enregistré.\nLes produits sont remis en stock.\n\nImprimer le ticket de remboursement ?`)) openReceiptWindow(refund);
 }
 
 // ================== VENTES : SUPPRESSION (CORRIGÉE) ==================
@@ -4111,7 +4286,8 @@ function computeCaisseBalance() {
   (sales || []).forEach((s) => {
     const t = new Date(s.date).getTime();
     if (isNaN(t) || t <= t0) return;
-    if (isCashPayment(s.paymentMethod)) total += Number(s.total) || 0;
+    // ✅ tous les modes comptent comme des espèces : le mobile money est retiré en liquide chaque soir
+    total += Number(s.total) || 0;
   });
 
   vault.moves.forEach((m) => {
@@ -4152,12 +4328,9 @@ function computeCaisseMobile() {
 }
 
 function renderCaisseBox() {
-  const el = document.getElementById("caisse-balance");
-  if (!el) return;
-  const especes = computeCaisseBalance();
+  if (!document.getElementById("caisse-total")) return;
   const mobile = computeCaisseMobile();
-  const total = especes + mobile.wave + mobile.orange;
-  el.textContent = fmt(especes);
+  const total = computeCaisseBalance(); // espèces + Wave + Orange Money (tout est retiré en espèces)
   const set = (id, v) => { const x = document.getElementById(id); if (x) x.textContent = v; };
   set("caisse-wave", fmt(mobile.wave));
   set("caisse-orange", fmt(mobile.orange));
@@ -4169,7 +4342,7 @@ function renderCaisseBox() {
   const sub = document.getElementById("caisse-balance-sub");
   if (sub) {
     const at = new Date(getCaisseBaseline().at);
-    sub.innerHTML = `Depuis le dernier comptage (${at.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}) : ventes de tous les modes de paiement (caisse, livraisons, crédits), moins les dépôts au coffre et les frais payés avec la caisse. Seules les espèces se comptent et se déposent au coffre.<br>${vaultStatusHtml()}`;
+    sub.innerHTML = `Depuis le dernier comptage (${at.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}) : toutes les ventes (espèces, Wave, Orange Money, livraisons, crédits), moins les remboursements, les dépôts au coffre et les frais payés avec la caisse.<br>${vaultStatusHtml()}`;
   }
 }
 

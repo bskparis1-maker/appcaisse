@@ -1403,3 +1403,9 @@ tr.relance-faite td { opacity: 0.6; }
 .quick-amounts button { white-space: nowrap; font-size: 13px; }
 .rendu strong { white-space: nowrap; }
 @media (max-width: 640px) { .rendu strong { font-size: 22px; } }
+
+/* ✅ Remboursements */
+tr.vente-remboursement td { background: #fef2f2; }
+.conditions-rappel { padding: 8px 10px; border-radius: 10px; background: #fff7ed; border: 1px solid #fdba74; font-size: 13px; margin-bottom: 8px; }
+.refund-table input { width: 70px; padding: 4px 6px; border-radius: 7px; border: 1px solid #d1d5db; }
+.modal-content select { width: 100%; }

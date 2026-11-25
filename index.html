@@ -40,18 +40,18 @@
 
       <!-- ✅ ARGENT DISPONIBLE DANS LA CAISSE -->
       <div class="cash-box">
-        <div class="cash-box-label">💰 Total de la caisse (tous modes de paiement)</div>
+        <div class="cash-box-label">💵 Argent dans la caisse</div>
         <div class="cash-box-value"><span id="caisse-total">0</span> FCFA</div>
         <div class="cash-box-today" id="caisse-today">
-          💵 Espèces (tiroir) <strong><span id="caisse-balance">0</span></strong> •
-          📱 Wave <strong id="caisse-wave">0</strong> •
+          Dont encaissé par 📱 Wave <strong id="caisse-wave">0</strong> •
           🟠 Orange Money <strong id="caisse-orange">0</strong>
+          <small>(à retirer en espèces en fin de journée)</small>
         </div>
         <div class="cash-box-sub" id="caisse-balance-sub"></div>
       </div>
       <div class="cash-actions">
         <button class="primary-btn" onclick="openDepositModal()">🔐 Faire un dépôt dans le coffre</button>
-        <button class="secondary-btn" onclick="openCaisseCountModal()">Compter les espèces / ajuster</button>
+        <button class="secondary-btn" onclick="openCaisseCountModal()">Compter la caisse / ajuster</button>
       </div>
 
       <div class="payment-section">
