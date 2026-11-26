@@ -25,12 +25,8 @@
       <button onclick="showView('livraisons')">Livraisons 🛵</button>
       <button class="nav-pro" onclick="showView('b2b')">B2B 🏢 🔒</button>
       <button onclick="showView('clients')">Clients</button>
-      <button class="nav-pro" onclick="showView('produits')">Produits 🔒</button>
-      <button class="nav-pro" onclick="showView('dashboard')">Tableau de bord 🔒</button>
       <button onclick="showView('frais')">Frais</button>
-      <button class="nav-pro" onclick="showView('coffre')">Coffre 🔒</button>
       <button onclick="showView('bar-parfum')">Bar à parfum</button>
-      <button class="nav-pro" onclick="showView('bilan')">Bilan 🔒</button>
       <button class="nav-pro" onclick="showView('pro')">Pro 🔒</button>
     </nav>
 
@@ -134,6 +130,27 @@
         </div>
       </div>
     
+      <!-- ✅ TESTEURS & CASSE (retirés du stock, historique dans Pro) -->
+      <details class="payment-section pos-panel" id="testeur-panel">
+        <summary>🧪 Testeurs &amp; casse : <span id="testeur-resume">…</span></summary>
+        <p class="help-text">Un flacon ouvert en testeur ou un produit cassé : il est retiré du stock et noté dans Pro → Testeurs &amp; casse.</p>
+        <div class="pay-modes" id="testeur-types">
+          <button type="button" class="pay-mode active" data-type="testeur" onclick="testeurType('testeur')">🧪 Testeur</button>
+          <button type="button" class="pay-mode" data-type="casse" onclick="testeurType('casse')">💥 Casse</button>
+        </div>
+        <div class="client-picker">
+          <input type="text" id="testeur-recherche" placeholder="🔍 Chercher le produit…" oninput="testeurChercher()" autocomplete="off" />
+          <div id="testeur-choisi"></div>
+          <div id="testeur-liste" class="client-picker-list hidden"></div>
+        </div>
+        <div class="testeur-champs">
+          <label>Quantité <input type="number" id="testeur-qte" min="1" value="1" inputmode="numeric" /></label>
+          <label>Note (optionnel) <input type="text" id="testeur-note" placeholder="Ex : tombé de l'étagère" /></label>
+        </div>
+        <button class="primary-btn" onclick="testeurValider()">Retirer du stock</button>
+        <div id="testeur-jour"></div>
+      </details>
+
       <!-- ✅ IMPRIMANTE DE TICKETS POS-80 (impression directe) -->
       <details class="payment-section pos-panel" id="pos-panel">
         <summary>🖨️ Imprimante de tickets (POS-80) : <span id="pos-etat">…</span></summary>
@@ -695,18 +712,22 @@
           <button type="button" class="secondary-btn" onclick="livAjouterLigne()">+ Ajouter un produit</button>
 
           <div class="form-grid" style="margin-top:10px;">
-            <label>Frais de livraison (FCFA)
-              <input type="number" id="liv-frais" min="0" value="0" />
-            </label>
-            <label>Qui paie le livreur ?
-              <select id="liv-payeur">
-                <option value="client">Le client paie le livreur (rien dans la caisse)</option>
-                <option value="boutique">La boutique paie le livreur (caisse)</option>
-              </select>
-            </label>
-            <label id="liv-cout-wrap" class="hidden">Montant payé au livreur par la boutique (FCFA)
-              <input type="number" id="liv-cout" min="0" value="0" />
-            </label>
+            <div class="liv-qui-paie">
+              <label>Prix de la livraison (ce que touche le livreur, FCFA)
+                <input type="number" id="liv-prix" min="0" step="500" value="0" inputmode="numeric" />
+              </label>
+              <div class="liv-qui-titre">Qui paie la livraison ?</div>
+              <div class="pay-modes" id="liv-payeur-btns">
+                <button type="button" class="pay-mode active" data-payeur="client" onclick="livChoisirPayeur('client')">👤 Le client</button>
+                <button type="button" class="pay-mode" data-payeur="partage" onclick="livChoisirPayeur('partage')">🤝 Partagé</button>
+                <button type="button" class="pay-mode" data-payeur="boutique" onclick="livChoisirPayeur('boutique')">🏪 La boutique</button>
+              </div>
+              <input type="hidden" id="liv-payeur" value="client" />
+              <label id="liv-part-wrap" class="hidden">Part payée par le client (FCFA) : la boutique paie le reste
+                <input type="number" id="liv-part-client" min="0" step="500" value="0" inputmode="numeric" />
+              </label>
+              <div id="liv-repartition" class="liv-repartition"></div>
+            </div>
             <label>Livraison prévue le
               <input type="date" id="liv-date" />
             </label>
@@ -727,8 +748,8 @@
           </div>
           <p class="total-label" id="liv-total"></p>
           <p class="help-text">Quand la commande sera marquée <strong>Livrée</strong> : la vente des produits est ajoutée à la caisse et le stock diminue.
-            Si <strong>le client paie le livreur</strong>, les frais de livraison ne passent ni par la caisse ni par les ventes du jour.
-            Si <strong>la boutique paie le livreur</strong>, les frais payés par le client sont dans la vente et le montant payé au livreur va dans Frais (retiré de la caisse).
+            La part du <strong>client</strong> pour la livraison est donnée directement au livreur : elle ne passe ni par la caisse ni par les ventes du jour.
+            La part de <strong>la boutique</strong> est retirée de la caisse et notée dans Frais.
             « Déjà payé en boutique » = la vente a déjà été passée en caisse, elle n'est pas comptée 2 fois.</p>
           <button class="primary-btn" id="liv-btn-save" onclick="livEnregistrer()">💾 Enregistrer la commande</button>
           <button class="secondary-btn" onclick="livViderForm();livNav('liste')">Annuler</button>
@@ -1072,6 +1093,57 @@
     </section>
 
     <!-- ============ VUE PRO (protégée par code) ============ -->
+    <!-- ============ PRO → TESTEURS & CASSE ============ -->
+    <section id="view-pertes" class="view hidden">
+      <h2>Testeurs &amp; casse</h2>
+      <div id="lock-pertes" class="pro-lock hidden">
+        <div style="font-size:34px;">🔒</div>
+        <p class="help-text">Entre le code pour voir l'historique.</p>
+        <form onsubmit="unlockView(event, 'pertes')">
+          <input type="password" id="lock-pertes-input" inputmode="numeric" maxlength="10" placeholder="Code" autocomplete="off" />
+          <button type="submit" class="primary-btn">Déverrouiller</button>
+        </form>
+        <p id="lock-pertes-error" class="pro-error hidden">Code incorrect.</p>
+      </div>
+      <div id="pertes-content" class="hidden">
+        <div class="dashboard-filters">
+          <div class="dashboard-quick">
+            <button class="secondary-btn pertes-period-btn" data-period="week" onclick="setPertesPeriode('week')">Semaine</button>
+            <button class="secondary-btn pertes-period-btn" data-period="month" onclick="setPertesPeriode('month')">Mois</button>
+            <button class="secondary-btn pertes-period-btn" data-period="year" onclick="setPertesPeriode('year')">Année</button>
+          </div>
+          <div>
+            <label>Date de référence : <input type="date" id="pertes-ref" onchange="setPertesRef(this.value)" /></label>
+            <button class="secondary-btn" onclick="setPertesRef(todayLocalStr())">Aujourd'hui</button>
+          </div>
+          <div id="pertes-range" class="help-text" style="margin:0;"></div>
+        </div>
+        <div class="dashboard-summary" id="pertes-kpis"></div>
+
+        <h3>💡 Pour optimiser</h3>
+        <ul class="pertes-conseils" id="pertes-conseils"></ul>
+
+        <h3>Par produit</h3>
+        <p class="help-text">« Ventes par testeur » : combien de flacons ont été vendus pour chaque testeur ouvert sur la période. Plus c'est haut, plus le testeur est rentable.</p>
+        <table>
+          <thead><tr><th>Produit</th><th>Testeurs</th><th>Casse</th><th>Coût</th><th>Vendus</th><th>Ventes par testeur</th></tr></thead>
+          <tbody id="pertes-produits"></tbody>
+        </table>
+
+        <h3>6 derniers mois</h3>
+        <table>
+          <thead><tr><th>Mois</th><th>Testeurs</th><th>Casse</th><th>Coût</th></tr></thead>
+          <tbody id="pertes-mois"></tbody>
+        </table>
+
+        <h3>Historique détaillé</h3>
+        <table>
+          <thead><tr><th>Date</th><th>Type</th><th>Produit</th><th>Qté</th><th>Coût</th><th>Note</th></tr></thead>
+          <tbody id="pertes-detail"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section id="view-pro" class="view hidden">
       <h2>Espace Pro</h2>
 
@@ -1115,6 +1187,7 @@
           <div class="card"><div class="label">Marge brute</div><div class="value"><span id="pro-margin">0</span> FCFA</div><div class="label" id="pro-margin-rate"></div></div>
           <div class="card"><div class="label">Charges fixes (période)</div><div class="value"><span id="pro-fixed">0</span> FCFA</div></div>
           <div class="card" id="pro-expenses-card"><div class="label">Frais de l'onglet Frais</div><div class="value"><span id="pro-expenses">0</span> FCFA</div><div class="label" id="pro-expenses-note"></div></div>
+          <div class="card"><div class="label">Testeurs &amp; casse (coût)</div><div class="value"><span id="pro-pertes">0</span> FCFA</div><div class="label">déduits du résultat</div></div>
           <div class="card pro-net" id="pro-net-card"><div class="label">Résultat net</div><div class="value" id="pro-net">0 FCFA</div><div class="label" id="pro-net-label"></div></div>
         </div>
 
@@ -1136,6 +1209,20 @@
           </div>
           <div class="breakeven-scale"><span>0</span><span>Équilibre</span><span>+50%</span></div>
           <p id="breakeven-text" class="help-text"></p>
+        </div>
+
+        <!-- ✅ PRIME DU GÉRANT -->
+        <h3>🏅 Prime du gérant</h3>
+        <div class="payment-section">
+          <p class="help-text" style="margin-top:0;">La prime = un pourcentage des ventes du mois <strong>au-dessus de l'objectif</strong>.
+            Elle est calculée sur le mois de la date de référence ci-dessus. Modifie les chiffres, c'est enregistré tout seul.</p>
+          <div class="testeur-champs">
+            <label>Objectif de ventes du mois (FCFA)
+              <input type="number" id="prime-objectif" min="0" step="50000" inputmode="numeric" onchange="setPrimeReglage('objectif', this.value)" /></label>
+            <label>Prime (% de ce qui dépasse)
+              <input type="number" id="prime-taux" min="0" max="100" step="0.5" inputmode="decimal" onchange="setPrimeReglage('taux', this.value)" /></label>
+          </div>
+          <div id="prime-box"></div>
         </div>
 
         <h3>Détail par produit (période)</h3>

@@ -398,12 +398,17 @@ function showView(viewName) {
   document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
   const view = document.getElementById(`view-${viewName}`);
   if (view) view.classList.remove("hidden");
+  renderProSubnav(viewName);
 
   if (viewName === "caisse") {
     renderProductsForSale();
     renderCart();
     renderClientSelect();
     renderCaisseBox();
+    renderTesteurPanel();
+  } else if (viewName === "pertes") {
+    if (!applyViewLock("pertes")) return;
+    renderPertesView();
   } else if (viewName === "coffre") {
     renderCoffreView();
   } else if (viewName === "bilan") {
@@ -1756,6 +1761,7 @@ function fetchStockHistoryFromSheet() {
         stockHistory = [];
       }
       renderStockHistoryTable();
+      refreshProIfVisible();
     } finally {
       delete window[callbackName];
       script.remove();
@@ -3609,7 +3615,8 @@ const DEFAULT_PRO_SETTINGS = {
     { name: "Autres frais", amount: 100000 }
   ],
   costs: { ...DEFAULT_PRO_COSTS },
-  includeExpenses: false
+  includeExpenses: false,
+  prime: { objectif: 3000000, taux: 5 }
 };
 
 // Lignes de vente qui ne sont pas des produits (pas de coût de revient)
@@ -3624,7 +3631,8 @@ function loadProSettings() {
     return {
       fixedCharges: Array.isArray(raw.fixedCharges) ? raw.fixedCharges : DEFAULT_PRO_SETTINGS.fixedCharges,
       costs: { ...DEFAULT_PRO_COSTS, ...(raw.costs || {}) },
-      includeExpenses: !!raw.includeExpenses
+      includeExpenses: !!raw.includeExpenses,
+      prime: { ...DEFAULT_PRO_SETTINGS.prime, ...(raw.prime || {}) }
     };
   } catch (e) {
     return JSON.parse(JSON.stringify(DEFAULT_PRO_SETTINGS));
@@ -3775,9 +3783,14 @@ function computePro(period, refStr) {
     .reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const deductedExpenses = proSettings.includeExpenses ? periodExpenses : 0;
 
+  // 4) Testeurs & casse : produits sortis du stock sans être vendus (au coût de revient)
+  const pertesCost = getPertes()
+    .filter((x) => inRange(x.date))
+    .reduce((s, x) => s + x.qty * (getUnitCost(x.productName) || 0), 0);
+
   const grossMargin = revenue - cogs;
   const fixed = fixedForPeriod(period);
-  const totalCharges = fixed + deductedExpenses;
+  const totalCharges = fixed + deductedExpenses + pertesCost;
   const net = grossMargin - totalCharges;
 
   // Taux de marge : celui des ventes réelles, sinon celui du catalogue
@@ -3798,7 +3811,7 @@ function computePro(period, refStr) {
 
   return {
     from, to, revenue, cogs, grossMargin, fixed, periodExpenses, deductedExpenses,
-    totalCharges, net, marginRate, breakEven, unitsNeeded, byProduct, discounts,
+    totalCharges, net, marginRate, breakEven, unitsNeeded, byProduct, discounts, pertesCost,
     missingCost: [...missingCost]
   };
 }
@@ -3832,6 +3845,7 @@ function lockPro() {
   applyViewLock("produits");
   applyViewLock("dashboard");
   applyViewLock("b2b");
+  applyViewLock("pertes");
 }
 
 // ✅ Verrou des onglets Produits et Tableau de bord (même code, même déverrouillage)
@@ -3879,6 +3893,8 @@ function refreshProIfVisible() {
   if (isVisible("view-bilan") && isProUnlocked()) renderBilanNumbers();
   if (isVisible("view-coffre")) renderCoffreView();
   if (isVisible("view-produits") && isProUnlocked()) { renderStockValue(); renderReorderTasks(); }
+  if (isVisible("view-pertes") && isProUnlocked()) renderPertesView();
+  if (isVisible("view-caisse")) renderTesteurPanel();
   renderCaisseBox();
   updateNavBadges();
 }
@@ -3928,6 +3944,7 @@ const PRO_PERIOD_LABELS = { day: "Aujourd'hui", week: "Cette semaine", month: "C
 
 function renderProNumbers() {
   if (!proState.refDate) proState.refDate = todayLocalStr();
+  renderPrime();
 
   // ----- Résumé des 4 périodes (par rapport à aujourd'hui) -----
   const summary = document.getElementById("pro-summary");
@@ -3963,6 +3980,7 @@ function renderProNumbers() {
   set("pro-fixed", fmt(r.fixed));
   set("pro-expenses", fmt(r.periodExpenses));
   set("pro-expenses-note", proSettings.includeExpenses ? "Déduits du résultat" : "Non déduits (case décochée)");
+  set("pro-pertes", fmt(r.pertesCost));
   set("pro-net", `${r.net >= 0 ? "+" : "−"}${fmt(Math.abs(r.net))} FCFA`);
   set("pro-net-label", r.net >= 0 ? "✅ Bénéfice" : "❌ Perte");
 
@@ -4871,7 +4889,11 @@ function updateNavBadges() {
     if (!btn.dataset.label) btn.dataset.label = btn.textContent.trim();
     btn.innerHTML = proEscape(btn.dataset.label) + (count > 0 ? ` <span class="nav-badge">${count}</span>` : "");
   };
-  setBadge("produits", getReorderItems().filter((i) => !i.ordered).length);
+  const aCommander = getReorderItems().filter((i) => !i.ordered).length;
+  setBadge("pro", aCommander);
+  document.querySelectorAll('.pro-subnav button[data-sub="produits"]').forEach((b) => {
+    b.innerHTML = "📦 Produits" + (aCommander > 0 ? ` <span class="nav-badge">${aCommander}</span>` : "");
+  });
   setBadge("bar-parfum", (perfumes || []).filter((p) => p.level === "out").length);
 }
 
@@ -5321,3 +5343,331 @@ document.addEventListener("DOMContentLoaded", () => {
     fetchSalesFromSheet();
   }, 30000);
 });
+// =====================================================================
+// ================== SOUS-ONGLETS DE PRO ==================
+// =====================================================================
+// Tableau de bord, Produits, Bilan, Coffre et Testeurs & casse sont regroupés dans Pro
+const PRO_SOUS_ONGLETS = [
+  { view: "pro", label: "💰 Résultat" },
+  { view: "dashboard", label: "📊 Tableau de bord" },
+  { view: "produits", label: "📦 Produits" },
+  { view: "bilan", label: "🩺 Bilan" },
+  { view: "coffre", label: "🏦 Coffre" },
+  { view: "pertes", label: "🧪 Testeurs & casse" }
+];
+
+function renderProSubnav(viewName) {
+  const estPro = PRO_SOUS_ONGLETS.some((o) => o.view === viewName);
+  const btnPro = document.querySelector(`nav button[onclick="showView('pro')"]`);
+  if (btnPro) btnPro.classList.toggle("nav-current", estPro);
+  if (!estPro) return;
+  const section = document.getElementById(`view-${viewName}`);
+  if (!section) return;
+  let bar = section.querySelector(".pro-subnav");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.className = "pro-subnav";
+    const h2 = section.querySelector("h2");
+    if (h2) h2.insertAdjacentElement("afterend", bar); else section.prepend(bar);
+  }
+  bar.innerHTML = PRO_SOUS_ONGLETS.map((o) =>
+    `<button type="button" data-sub="${o.view}" class="${o.view === viewName ? "active" : ""}" onclick="showView('${o.view}')">${o.label}</button>`
+  ).join("");
+  updateNavBadges();
+}
+
+// =====================================================================
+// ================== PRIME DU GÉRANT ==================
+// =====================================================================
+// Prime = taux % de la partie du chiffre d'affaires du mois qui dépasse l'objectif
+function computePrime(refStr) {
+  const r = computePro("month", refStr);
+  const objectif = Number(proSettings.prime.objectif) || 0;
+  const taux = Number(proSettings.prime.taux) || 0;
+  const depassement = Math.max(0, r.revenue - objectif);
+  const prime = Math.round((depassement * taux) / 100);
+  return { from: r.from, to: r.to, ca: r.revenue, objectif, taux, depassement, prime, net: r.net };
+}
+
+function moisLabel(fromStr) {
+  const [y, m] = fromStr.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+}
+
+function setPrimeReglage(champ, valeur) {
+  const v = Math.max(0, Number(valeur) || 0);
+  proSettings.prime[champ] = champ === "taux" ? Math.min(v, 100) : v;
+  saveProSettings();
+  renderPrime();
+}
+
+function renderPrime() {
+  const box = document.getElementById("prime-box");
+  if (!box) return;
+  const ref = proState.refDate || todayLocalStr();
+  const p = computePrime(ref);
+  const pct = p.objectif > 0 ? Math.min((p.ca / p.objectif) * 100, 150) : 0;
+  const atteint = p.ca >= p.objectif && p.objectif > 0;
+
+  // 6 derniers mois (jusqu'au mois de la date de référence)
+  const [y, m] = ref.split("-").map(Number);
+  const historique = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(y, m - 1 - i, 1);
+    historique.push(computePrime(toLocalDateStr(d)));
+  }
+
+  const objIn = document.getElementById("prime-objectif");
+  const tauxIn = document.getElementById("prime-taux");
+  if (objIn && document.activeElement !== objIn) objIn.value = p.objectif;
+  if (tauxIn && document.activeElement !== tauxIn) tauxIn.value = p.taux;
+
+  box.innerHTML = `
+    <div class="prime-titre">Mois de ${moisLabel(p.from)}</div>
+    <div class="dashboard-summary">
+      <div class="card"><div class="label">Chiffre d'affaires du mois</div><div class="value">${fmt(p.ca)} FCFA</div></div>
+      <div class="card"><div class="label">Objectif</div><div class="value">${fmt(p.objectif)} FCFA</div></div>
+      <div class="card"><div class="label">Au-dessus de l'objectif</div><div class="value">${fmt(p.depassement)} FCFA</div></div>
+      <div class="card pro-net ${atteint ? "pos" : ""}"><div class="label">Prime du gérant (${p.taux} %)</div><div class="value">${fmt(p.prime)} FCFA</div></div>
+    </div>
+    <div class="breakeven-bar prime-bar"><div class="breakeven-fill ${atteint ? "reached" : ""}" style="width:${pct / 1.5}%"></div><div class="breakeven-mark" title="Objectif"></div></div>
+    <p class="help-text">${atteint
+      ? `✅ Objectif atteint : ${p.taux} % de ${fmt(p.depassement)} FCFA = <strong>${fmt(p.prime)} FCFA</strong> de prime. Chaque 10 000 F de ventes en plus ajoute ${fmt(100 * p.taux)} F.`
+      : `Il manque <strong>${fmt(Math.max(0, p.objectif - p.ca))} FCFA</strong> de ventes ce mois-ci pour débloquer la prime.`}
+      Résultat du mois après prime : <strong class="${p.net - p.prime >= 0 ? "text-pos" : "text-neg"}">${p.net - p.prime >= 0 ? "+" : "−"}${fmt(Math.abs(p.net - p.prime))} FCFA</strong>.</p>
+    <table class="prime-historique">
+      <thead><tr><th>Mois</th><th>CA</th><th>Objectif atteint</th><th>Prime</th></tr></thead>
+      <tbody>${historique.slice().reverse().map((h) => `<tr>
+        <td>${moisLabel(h.from)}</td>
+        <td>${fmt(h.ca)}</td>
+        <td>${h.ca >= h.objectif && h.objectif > 0 ? "✅" : `${h.objectif > 0 ? Math.round((h.ca / h.objectif) * 100) : 0} %`}</td>
+        <td><strong>${fmt(h.prime)}</strong></td></tr>`).join("")}</tbody>
+    </table>`;
+}
+
+// =====================================================================
+// ================== TESTEURS & CASSE ==================
+// =====================================================================
+// Enregistrés dans l'historique de stock (feuille StockHistory) avec un motif « [TESTEUR] … » ou « [CASSE] … »
+const PERTE_TYPES = {
+  testeur: { label: "Testeur", pluriel: "testeurs", icon: "🧪", tag: "[TESTEUR]" },
+  casse: { label: "Casse", pluriel: "casse", icon: "💥", tag: "[CASSE]" }
+};
+const perteState = { type: "testeur", productId: null, period: "month", refDate: null };
+
+function perteTypeOf(reason) {
+  const r = String(reason || "").trim().toUpperCase();
+  if (r.startsWith("[TESTEUR]")) return "testeur";
+  if (r.startsWith("[CASSE]")) return "casse";
+  return null;
+}
+
+function getPertes() {
+  return (stockHistory || []).map((h) => {
+    const type = perteTypeOf(h.reason);
+    if (!type) return null;
+    const qty = Math.max(0, -(Number(h.delta) || 0));
+    if (!qty) return null;
+    return {
+      date: h.date, type, qty,
+      productId: h.productId,
+      productName: h.productName || "Produit",
+      note: String(h.reason || "").trim().replace(/^\[[A-Z]+\]\s*/i, "")
+    };
+  }).filter(Boolean);
+}
+
+// ---------- Caisse ----------
+function testeurType(type) {
+  perteState.type = type;
+  document.querySelectorAll("#testeur-types .pay-mode").forEach((b) => b.classList.toggle("active", b.dataset.type === type));
+}
+
+function testeurChercher() {
+  const input = document.getElementById("testeur-recherche");
+  const list = document.getElementById("testeur-liste");
+  const q = sansAccent(input.value.trim());
+  if (q.length < 2) { list.classList.add("hidden"); list.innerHTML = ""; return; }
+  const res = (products || []).filter((p) => !isServiceProduct(p) && sansAccent(p.name).includes(q))
+    .sort((a, b) => (sansAccent(a.name).startsWith(q) ? 0 : 1) - (sansAccent(b.name).startsWith(q) ? 0 : 1) ||
+      String(a.name).localeCompare(String(b.name), "fr"))
+    .slice(0, 8);
+  list.innerHTML = res.map((p) =>
+    `<button type="button" onclick="testeurChoisir('${proEscape(String(p.id))}')"><strong>${proEscape(p.name)}</strong> <small>stock ${Number(p.stock) || 0}</small></button>`
+  ).join("") || `<div class="help-text" style="padding:6px 8px;">Aucun produit trouvé.</div>`;
+  list.classList.remove("hidden");
+}
+
+function testeurChoisir(id) {
+  perteState.productId = id;
+  document.getElementById("testeur-recherche").value = "";
+  document.getElementById("testeur-liste").classList.add("hidden");
+  renderTesteurPanel();
+}
+
+function testeurProduit() {
+  return (products || []).find((p) => String(p.id) === String(perteState.productId)) || null;
+}
+
+function testeurValider() {
+  const p = testeurProduit();
+  if (!p) return alert("Choisis d'abord le produit.");
+  const qty = parseInt(document.getElementById("testeur-qte").value, 10);
+  if (!qty || qty < 1) return alert("Quantité invalide.");
+  const stock = Number(p.stock) || 0;
+  if (qty > stock) return alert(`Stock insuffisant : il reste ${stock} × ${p.name}.`);
+  const t = PERTE_TYPES[perteState.type];
+  const note = document.getElementById("testeur-note").value.trim();
+  if (!confirm(`${t.icon} ${t.label} : retirer ${qty} × ${p.name} du stock ?\n\nStock : ${stock} → ${stock - qty}`)) return;
+
+  p.stock = stock - qty;
+  saveProducts(products);
+  sendStockToSheetWithFallback(products);
+
+  const change = {
+    date: new Date().toISOString(),
+    productId: p.id,
+    productName: p.name,
+    oldStock: stock,
+    newStock: p.stock,
+    delta: -qty,
+    reason: `${t.tag} ${note || t.label}`.trim()
+  };
+  logStockChangeToSheet(change);
+  if (!Array.isArray(stockHistory)) stockHistory = [];
+  stockHistory.push(change);
+
+  perteState.productId = null;
+  document.getElementById("testeur-qte").value = 1;
+  document.getElementById("testeur-note").value = "";
+  renderProductsForSale();
+  renderProductsTable();
+  renderStockHistoryTable();
+  updateNavBadges();
+  renderTesteurPanel();
+  refreshProIfVisible();
+}
+
+function renderTesteurPanel() {
+  const choisi = document.getElementById("testeur-choisi");
+  if (!choisi) return;
+  const p = testeurProduit();
+  choisi.innerHTML = p
+    ? `<span class="testeur-produit">${proEscape(p.name)} <small>(stock ${Number(p.stock) || 0})</small>
+        <button type="button" class="small-btn" onclick="perteState.productId=null;renderTesteurPanel()">✕</button></span>`
+    : "";
+  document.getElementById("testeur-recherche").classList.toggle("hidden", !!p);
+
+  const today = todayLocalStr();
+  const jour = getPertes().filter((x) => dateKeyOf(x.date) === today).sort((a, b) => new Date(b.date) - new Date(a.date));
+  const nb = (type) => jour.filter((x) => x.type === type).reduce((s, x) => s + x.qty, 0);
+  const resume = document.getElementById("testeur-resume");
+  if (resume) resume.textContent = jour.length ? `aujourd'hui ${nb("testeur")} testeur(s), ${nb("casse")} casse` : "rien aujourd'hui";
+  const box = document.getElementById("testeur-jour");
+  if (box) box.innerHTML = jour.length
+    ? `<div class="help-text" style="margin-top:10px;"><strong>Sortis aujourd'hui :</strong></div>` + jour.map((x) =>
+        `<div class="testeur-ligne">${PERTE_TYPES[x.type].icon} ${x.qty} × ${proEscape(x.productName)}
+          <small>${new Date(x.date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}${x.note && x.note !== PERTE_TYPES[x.type].label ? " • " + proEscape(x.note) : ""}</small></div>`).join("")
+    : "";
+}
+
+// ---------- Pro → Testeurs & casse ----------
+function setPertesPeriode(period) { perteState.period = period; renderPertesView(); }
+function setPertesRef(v) { if (v) { perteState.refDate = v; renderPertesView(); } }
+
+function resumePertes(from, to) {
+  const dans = (v) => { const k = dateKeyOf(v); return k && k >= from && k <= to; };
+  const L = getPertes().filter((x) => dans(x.date));
+  const res = { liste: L, testeurs: 0, casse: 0, cout: 0, valeur: 0, parProduit: {} };
+  L.forEach((x) => {
+    const k = proKey(x.productName);
+    const cout = x.qty * (getUnitCost(x.productName) || 0);
+    const valeur = x.qty * getCatalogPrice(x.productName);
+    if (x.type === "testeur") res.testeurs += x.qty; else res.casse += x.qty;
+    res.cout += cout; res.valeur += valeur;
+    if (!res.parProduit[k]) res.parProduit[k] = { name: x.productName, testeurs: 0, casse: 0, cout: 0, vendus: 0 };
+    res.parProduit[k][x.type === "testeur" ? "testeurs" : "casse"] += x.qty;
+    res.parProduit[k].cout += cout;
+  });
+  // unités vendues sur la même période, pour comparer
+  (sales || []).forEach((s) => {
+    if (!dans(s.date)) return;
+    (s.items || []).forEach((i) => {
+      const k = proKey(i.name);
+      if (res.parProduit[k]) res.parProduit[k].vendus += Number(i.qty) || 0;
+    });
+  });
+  return res;
+}
+
+function renderPertesView() {
+  if (!document.getElementById("pertes-kpis")) return;
+  if (!perteState.refDate) perteState.refDate = todayLocalStr();
+  document.getElementById("pertes-ref").value = perteState.refDate;
+  document.querySelectorAll(".pertes-period-btn").forEach((b) => b.classList.toggle("active", b.dataset.period === perteState.period));
+
+  const { from, to } = getProRange(perteState.period, perteState.refDate);
+  const r = resumePertes(from, to);
+  const prev = getProRange(perteState.period, previousRef(perteState.period, perteState.refDate));
+  const rp = resumePertes(prev.from, prev.to);
+  const evo = (a, b) => b > 0 ? (a === b ? "pareil que la période d'avant" : `${a > b ? "+" : "−"}${Math.round(Math.abs(a - b) * 100 / b)} % vs période d'avant`) : (a > 0 ? "rien la période d'avant" : "");
+
+  document.getElementById("pertes-range").textContent = `Période : du ${fmtDateFr(from)} au ${fmtDateFr(to)}`;
+  const card = (label, value, sub = "") => `<div class="card"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="label">${sub}</div>` : ""}</div>`;
+  document.getElementById("pertes-kpis").innerHTML =
+    card("🧪 Testeurs ouverts", fmt(r.testeurs), evo(r.testeurs, rp.testeurs)) +
+    card("💥 Produits cassés", fmt(r.casse), evo(r.casse, rp.casse)) +
+    card("Coût (prix de revient)", fmt(r.cout) + " FCFA", "déduit du résultat dans Pro") +
+    card("Valeur au prix de vente", fmt(r.valeur) + " FCFA");
+
+  // Par produit
+  const rows = Object.values(r.parProduit).sort((a, b) => b.cout - a.cout || (b.testeurs + b.casse) - (a.testeurs + a.casse));
+  document.getElementById("pertes-produits").innerHTML = rows.length
+    ? rows.map((p) => `<tr>
+        <td>${proEscape(p.name)}</td>
+        <td>${p.testeurs || ""}</td>
+        <td>${p.casse || ""}</td>
+        <td>${fmt(p.cout)}</td>
+        <td>${p.vendus}</td>
+        <td>${p.testeurs ? (p.vendus ? (Math.round((p.vendus / p.testeurs) * 10) / 10).toLocaleString("fr-FR") : "0") : "—"}</td>
+      </tr>`).join("")
+    : `<tr><td colspan="6">Aucun testeur ni casse sur cette période.</td></tr>`;
+
+  // Conseils
+  const conseils = [];
+  const testeursSansVente = rows.filter((p) => p.testeurs > 0 && p.vendus === 0);
+  if (testeursSansVente.length) conseils.push(`🔎 Testeur ouvert mais <strong>aucune vente</strong> sur la période : ${testeursSansVente.map((p) => proEscape(p.name)).join(", ")}. Vérifie s'il faut vraiment un testeur pour ces parfums.`);
+  const bons = rows.filter((p) => p.testeurs > 0 && p.vendus / p.testeurs >= 10).sort((a, b) => b.vendus / b.testeurs - a.vendus / a.testeurs);
+  if (bons.length) conseils.push(`✅ Testeurs rentables (10 ventes ou plus par testeur) : ${bons.slice(0, 5).map((p) => `${proEscape(p.name)} (${Math.round(p.vendus / p.testeurs)})`).join(", ")}.`);
+  if (r.casse > 0) {
+    const topCasse = rows.filter((p) => p.casse > 0).sort((a, b) => b.casse - a.casse)[0];
+    conseils.push(`💥 Casse : ${fmt(r.casse)} produit(s) pour ${fmt(r.liste.filter((x) => x.type === "casse").reduce((s, x) => s + x.qty * (getUnitCost(x.productName) || 0), 0))} FCFA. Le plus touché : ${proEscape(topCasse.name)} (${topCasse.casse}). Pense au rangement et aux étagères.`);
+  }
+  const sansCout = rows.filter((p) => getUnitCost(p.name) === null);
+  if (sansCout.length) conseils.push(`⚠️ Coût de revient manquant (compté 0) : ${sansCout.map((p) => proEscape(p.name)).join(", ")}. À remplir dans Pro → Résultat.`);
+  document.getElementById("pertes-conseils").innerHTML = conseils.map((c) => `<li>${c}</li>`).join("") || "<li>Rien à signaler.</li>";
+
+  // 6 derniers mois
+  const [y, m] = perteState.refDate.split("-").map(Number);
+  const mois = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(y, m - 1 - i, 1);
+    const rg = getProRange("month", toLocalDateStr(d));
+    mois.push({ from: rg.from, ...resumePertes(rg.from, rg.to) });
+  }
+  const max = Math.max(1, ...mois.map((x) => x.cout));
+  document.getElementById("pertes-mois").innerHTML = mois.map((x) => `<tr>
+      <td>${moisLabel(x.from)}</td><td>${x.testeurs}</td><td>${x.casse}</td>
+      <td><div class="pertes-barre"><span style="width:${(x.cout / max) * 100}%"></span></div>${fmt(x.cout)} F</td></tr>`).join("");
+
+  // Détail
+  const liste = r.liste.slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+  document.getElementById("pertes-detail").innerHTML = liste.length
+    ? liste.map((x) => `<tr>
+        <td>${new Date(x.date).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
+        <td>${PERTE_TYPES[x.type].icon} ${PERTE_TYPES[x.type].label}</td>
+        <td>${proEscape(x.productName)}</td><td>${x.qty}</td>
+        <td>${fmt(x.qty * (getUnitCost(x.productName) || 0))}</td>
+        <td>${x.note && x.note !== PERTE_TYPES[x.type].label ? proEscape(x.note) : ""}</td></tr>`).join("")
+    : `<tr><td colspan="6">Rien sur cette période.</td></tr>`;
+}

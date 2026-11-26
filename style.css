@@ -1415,3 +1415,44 @@ tr.vente-remboursement td { background: #fef2f2; }
 .pos-panel[open] summary { margin-bottom: 8px; }
 .pos-option { display: block; font-size: 14px; margin: 6px 0; }
 .pos-option select { margin-left: 6px; padding: 4px 6px; border-radius: 7px; border: 1px solid #d1d5db; }
+
+/* ✅ Sous-onglets de Pro */
+.pro-subnav { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 14px; padding-bottom: 10px; border-bottom: 1px solid #e5e7eb; }
+.pro-subnav button {
+  border: 1px solid #d1d5db; background: #fff; color: #111827; border-radius: 999px;
+  padding: 7px 13px; font-size: 14px; cursor: pointer; font-family: inherit;
+}
+.pro-subnav button:hover { background: #f9fafb; }
+.pro-subnav button.active { background: linear-gradient(135deg, #ec4899, #f97316); color: #fff; border-color: transparent; }
+nav button.nav-current { box-shadow: 0 0 0 3px #fed7aa; }
+@media (max-width: 700px) {
+  .pro-subnav { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .pro-subnav button { flex-shrink: 0; }
+}
+
+/* ✅ Testeurs & casse */
+.testeur-champs { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0; }
+.testeur-champs label { flex: 1 1 180px; font-size: 14px; }
+.testeur-champs input { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid #d1d5db; font-size: 15px; margin-top: 3px; }
+.testeur-produit { display: inline-flex; align-items: center; gap: 8px; background: #fff7ed; border: 1px solid #fdba74; border-radius: 8px; padding: 6px 10px; font-weight: 600; }
+.testeur-ligne { font-size: 14px; padding: 3px 0; border-bottom: 1px dashed #e5e7eb; }
+.testeur-ligne small { color: #6b7280; }
+#testeur-types { margin: 6px 0 8px; grid-template-columns: repeat(2, 1fr); max-width: 420px; }
+.pertes-period-btn.active { background: #111827; color: #fff; border-color: #111827; }
+.pertes-conseils { padding-left: 18px; font-size: 14px; line-height: 1.5; }
+.pertes-barre { display: inline-block; width: 90px; height: 8px; background: #f3f4f6; border-radius: 4px; margin-right: 6px; vertical-align: middle; overflow: hidden; }
+.pertes-barre span { display: block; height: 100%; background: #f97316; }
+
+/* ✅ Prime du gérant */
+.prime-titre { font-weight: 700; margin: 6px 0; }
+.prime-bar { margin: 6px 0 4px; }
+.prime-historique td:first-child { text-transform: capitalize; }
+
+/* ✅ Livraison : qui paie quoi */
+.liv-qui-paie { grid-column: 1 / -1; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; }
+.liv-qui-paie label { display: block; }
+.liv-qui-titre { font-weight: 600; font-size: 14px; margin: 8px 0 6px; }
+#liv-part-wrap { margin-top: 8px; }
+.liv-repartition { font-size: 14px; margin-top: 8px; color: #374151; }
+#pertes-mois td:first-child { text-transform: capitalize; }
+.liv-qui-paie input[type="number"] { display: block; width: 100%; max-width: 280px; margin-top: 4px; }

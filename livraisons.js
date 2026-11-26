@@ -112,10 +112,26 @@ const livWa = (t) => { const d = String(t || "").replace(/\D/g, ""); return d ? 
 const livProduits = (c) => { try { return JSON.parse(c["Produits"] || "[]"); } catch (e) { return []; } };
 const livMethod = (label) => (LIV_PAIEMENTS.find((p) => p.label === label) || LIV_PAIEMENTS[0]).method;
 const livParId = (id) => liv.commandes.find((c) => c["ID"] === id);
-// « client » = le client paie le livreur directement (frais hors caisse) ; anciennes commandes = « boutique »
-const livPayeur = (c) => (c["Livreur payé par"] === "client" ? "client" : "boutique");
+// Qui paie la livraison :
+//  « client »   = le client paie tout au livreur (hors caisse) → Frais livraison = prix, Coût livreur = 0
+//  « partage »  = le client paie sa part au livreur (hors caisse), la boutique paie le reste (caisse → Frais)
+//                 → Frais livraison = part client, Coût livreur = part boutique
+//  « boutique » = livraison offerte : la boutique paie le livreur (caisse → Frais) → Frais livraison = 0
+//                 (anciennes commandes « boutique » : le client payait la livraison à la boutique, Frais livraison > 0)
+const livPayeur = (c) => (["client", "partage"].includes(c["Livreur payé par"]) ? c["Livreur payé par"] : "boutique");
+const livCout = (c) => (c["Coût livreur"] === "" || c["Coût livreur"] == null ? Number(c["Frais livraison"]) || 0 : Number(c["Coût livreur"]) || 0);
+// Résumé de la livraison en une phrase
+function livInfoLivraison(c) {
+  const F = Number(c["Frais livraison"]) || 0;
+  const C = livCout(c);
+  const p = livPayeur(c);
+  if (p === "client") return F > 0 ? `livraison ${fmt(F)} F payée au livreur par le client` : "sans frais de livraison";
+  if (p === "partage") return `livraison partagée : client ${fmt(F)} F + boutique ${fmt(C)} F`;
+  if (F > 0) return `dont livraison ${fmt(F)} F • livreur ${fmt(C)} F payé par la boutique`;
+  return C > 0 ? `livraison offerte : ${fmt(C)} F payés par la boutique` : "sans frais de livraison";
+}
 // ce que la boutique encaisse (sans les frais si le client paie le livreur)
-const livMontantBoutique = (c) => livPayeur(c) === "client" ? Number(c["Sous-total"]) || 0 : Number(c["Total"]) || 0;
+const livMontantBoutique = (c) => livPayeur(c) !== "boutique" ? Number(c["Sous-total"]) || 0 : Number(c["Total"]) || 0;
 
 function livNav(vue) {
   liv.vue = vue;
@@ -189,7 +205,7 @@ function livRendreListe() {
     const livs = `<option value="">— Livreur —</option>` + liv.livreurs.map((l) =>
       `<option ${l["Nom"] === c["Livreur"] ? "selected" : ""}>${proEscape(l["Nom"])}</option>`).join("");
     const caisse = livree
-      ? `<div class="help-text">✅ Comptée en caisse${c["Vente caisse"] ? ` : ${fmt(livMontantBoutique(c))} F` : " (paiement déjà fait en boutique)"}${livPayeur(c) === "boutique" && Number(c["Coût livreur"]) > 0 ? ` • livreur ${fmt(c["Coût livreur"])} F dans Frais` : ""}</div>`
+      ? `<div class="help-text">✅ Comptée en caisse${c["Vente caisse"] ? ` : ${fmt(livMontantBoutique(c))} F` : " (paiement déjà fait en boutique)"}${livPayeur(c) !== "client" && livCout(c) > 0 ? ` • livreur ${fmt(livCout(c))} F dans Frais` : ""}</div>`
       : "";
     return `
       <div class="liv-card liv-b-${k}">
@@ -202,7 +218,7 @@ function livRendreListe() {
             ${c["Note"] ? `<div class="liv-mut">📝 ${proEscape(c["Note"])}</div>` : ""}
           </div>
           <div class="liv-prix">${fmt(c["Total"])} FCFA
-            <div class="liv-mut">dont livraison ${fmt(c["Frais livraison"])}${livPayeur(c) === "client" && Number(c["Frais livraison"]) > 0 ? " (payée au livreur)" : ""}</div>
+            <div class="liv-mut">${livInfoLivraison(c)}</div>
             <div style="margin-top:4px">
               <span class="badge liv-st-${k}">${proEscape(c["Statut"])}</span>
               <span class="badge ${c["Payé"] === "Oui" ? "pos" : "neg"}">${c["Payé"] === "Oui" ? "Payé" : "Non payé"}</span>
@@ -270,10 +286,12 @@ async function livLivree(id) {
   if (!c) return;
   const method = livMethod(c["Paiement"]);
   const lignes = livProduits(c);
-  const clientPaie = livPayeur(c) === "client";
-  // si le client paie le livreur : ni frais dans la vente, ni dépense
-  const frais = clientPaie ? 0 : Number(c["Frais livraison"]) || 0;
-  const cout = clientPaie ? 0 : Number(c["Coût livreur"] === "" || c["Coût livreur"] == null ? frais : c["Coût livreur"]) || 0;
+  const payeur = livPayeur(c);
+  const partClient = Number(c["Frais livraison"]) || 0;
+  // la part du client va directement au livreur (hors caisse) ; seules les anciennes commandes « boutique » l'encaissaient
+  const frais = payeur === "boutique" ? partClient : 0;
+  // la part de la boutique est payée avec la caisse (Frais)
+  const cout = payeur === "client" ? 0 : livCout(c);
 
   // vérification du stock (seulement si la vente n'a pas déjà été faite en boutique)
   if (method) {
@@ -290,9 +308,11 @@ async function livLivree(id) {
   const resume = (method
     ? `• Vente de ${fmt(livMontantBoutique(c))} FCFA en ${formatPaymentMethod(method)} ajoutée aux ventes du jour\n• Stock diminué\n`
     : `• Paiement déjà fait en boutique : pas de nouvelle vente\n`) +
-    (clientPaie
-      ? (Number(c["Frais livraison"]) > 0 ? `• Livraison (${fmt(c["Frais livraison"])} FCFA) payée au livreur par le client : pas dans la caisse` : "• Pas de frais de livraison")
-      : (cout > 0 ? `• ${fmt(cout)} FCFA payés au livreur, retirés de la caisse (Frais)` : "• Aucun frais de livreur"));
+    (payeur === "client"
+      ? (partClient > 0 ? `• Livraison (${fmt(partClient)} FCFA) payée au livreur par le client : pas dans la caisse` : "• Pas de frais de livraison")
+      : payeur === "partage"
+        ? `• Livraison partagée : ${fmt(partClient)} FCFA payés au livreur par le client (hors caisse)\n• Part de la boutique : ${fmt(cout)} FCFA retirés de la caisse (Frais)`
+        : (cout > 0 ? `• ${fmt(cout)} FCFA payés au livreur, retirés de la caisse (Frais)` : "• Aucun frais de livreur"));
   if (!confirm(`Commande ${id} livrée à ${c["Client"]} ?\n\n${resume}`)) return;
 
   try {
@@ -342,7 +362,7 @@ async function livLivree(id) {
   if (cout > 0) {
     expense = createExpense({
       category: "Transport / livraison",
-      motif: `Livraison ${id} – ${c["Client"]}${c["Livreur"] ? " (" + c["Livreur"] + ")" : ""}`,
+      motif: `Livraison ${id} – ${c["Client"]}${c["Livreur"] ? " (" + c["Livreur"] + ")" : ""}${payeur === "partage" ? " – part boutique" : ""}`,
       amount: cout,
       source: "caisse"
     });
@@ -366,7 +386,7 @@ function livTicket(id) {
   const c = livParId(id);
   if (!c) return;
   const frais = Number(c["Frais livraison"]) || 0;
-  const clientPaie = livPayeur(c) === "client";
+  const clientPaie = livPayeur(c) !== "boutique"; // le client paie sa part de livraison au livreur
   const dejaPaye = c["Payé"] === "Oui" || !livMethod(c["Paiement"]);
   const prevue = /^\d{4}-\d{2}-\d{2}$/.test(c["Livraison prévue"] || "") ? fmtDateFr(c["Livraison prévue"]) : c["Livraison prévue"];
   const encaisser = dejaPaye
@@ -390,7 +410,9 @@ function livTicket(id) {
     lignes: livProduits(c).map((l) => ({ nom: l.nom, qte: l.qte, prix: l.prix })),
     recap: [
       ["Produits", fmt(c["Sous-total"]) + " F"],
-      [clientPaie ? "Livraison (payée au livreur)" : "Livraison", fmt(frais) + " F"]
+      clientPaie
+        ? [livPayeur(c) === "partage" ? "Livraison (votre part, au livreur)" : "Livraison (à payer au livreur)", fmt(frais) + " F"]
+        : ["Livraison", frais > 0 ? fmt(frais) + " F" : (livCout(c) > 0 ? "Offerte" : "0 F")]
     ],
     totalLabel: "TOTAL",
     total: c["Total"],
@@ -409,13 +431,15 @@ function livMessageLivreur(c) {
   const fraisLiv = Number(c["Frais livraison"]) || 0;
   const produitsPayes = c["Payé"] === "Oui" || !livMethod(c["Paiement"]);
   let enc;
-  if (livPayeur(c) === "client" && fraisLiv > 0) {
+  if (livPayeur(c) !== "boutique" && fraisLiv > 0) {
     enc = produitsPayes
       ? `Produits DÉJÀ PAYÉS. Encaisse seulement ta livraison : ${fmt(fraisLiv)} FCFA (pour toi)`
       : `À ENCAISSER : ${fmt(c["Total"])} FCFA (${c["Paiement"]})\n= produits ${fmt(c["Sous-total"])} à rapporter à la boutique + ta livraison ${fmt(fraisLiv)}`;
   } else {
     enc = produitsPayes ? "DÉJÀ PAYÉ : rien à encaisser" : `À ENCAISSER : ${fmt(c["Total"])} FCFA (${c["Paiement"]})`;
   }
+  const partBoutique = livPayeur(c) === "client" ? 0 : livCout(c);
+  if (partBoutique > 0) enc += `\n🏪 La boutique te paie : ${fmt(partBoutique)} FCFA`;
   return `🛵 Livraison ${c["ID"]}\nClient : ${c["Client"]}\nTél : ${c["Téléphone"]}\nAdresse : ${c["Adresse"] || "—"}` +
     (c["Repère"] ? `\nRepère : ${c["Repère"]}` : "") + `\n\n${p}\n\n${enc}` + (c["Note"] ? `\nNote : ${c["Note"]}` : "");
 }
@@ -480,19 +504,42 @@ function livLignes() {
   }).filter((l) => l.nom && l.qte > 0);
 }
 
+// Prix de la livraison réparti entre le client et la boutique
+function livParts() {
+  const prix = Math.max(0, Number(document.getElementById("liv-prix").value) || 0);
+  const payeur = document.getElementById("liv-payeur").value;
+  const partSaisie = Math.max(0, Number(document.getElementById("liv-part-client").value) || 0);
+  const client = payeur === "client" ? prix : payeur === "boutique" ? 0 : Math.min(prix, partSaisie);
+  return { prix, payeur, client, boutique: prix - client };
+}
+
+function livChoisirPayeur(p) {
+  document.getElementById("liv-payeur").value = p;
+  document.querySelectorAll("#liv-payeur-btns .pay-mode").forEach((b) => b.classList.toggle("active", b.dataset.payeur === p));
+  const part = document.getElementById("liv-part-client");
+  const prix = Number(document.getElementById("liv-prix").value) || 0;
+  if (p === "partage" && (!Number(part.value) || Number(part.value) >= prix)) part.value = Math.round(prix / 2 / 100) * 100;
+  livCalculer();
+}
+
 function livCalculer() {
+  const prixEl = document.getElementById("liv-prix");
+  if (!prixEl) return;
   const st = livLignes().reduce((s, l) => s + l.qte * l.prix, 0);
-  const fraisEl = document.getElementById("liv-frais");
-  const coutEl = document.getElementById("liv-cout");
-  if (!fraisEl) return;
-  if (!liv.coutModifie) coutEl.value = fraisEl.value;
-  const fr = Number(fraisEl.value) || 0;
-  const clientPaie = document.getElementById("liv-payeur").value === "client";
-  document.getElementById("liv-cout-wrap").classList.toggle("hidden", clientPaie);
+  const t = livParts();
+  document.querySelectorAll("#liv-payeur-btns .pay-mode").forEach((b) => b.classList.toggle("active", b.dataset.payeur === t.payeur));
+  document.getElementById("liv-part-wrap").classList.toggle("hidden", t.payeur !== "partage");
+  document.getElementById("liv-repartition").innerHTML = !t.prix
+    ? "Pas de frais de livraison."
+    : t.payeur === "client"
+      ? `👤 Le client donne <strong>${fmt(t.prix)} F</strong> au livreur. Rien ne sort de la caisse.`
+      : t.payeur === "boutique"
+        ? `🏪 Livraison offerte : la boutique paie <strong>${fmt(t.prix)} F</strong> au livreur, retirés de la caisse quand la commande est livrée.`
+        : `🤝 Client : <strong>${fmt(t.client)} F</strong> au livreur • Boutique : <strong>${fmt(t.boutique)} F</strong>, retirés de la caisse quand la commande est livrée.`;
   document.getElementById("liv-total").innerHTML =
-    `Le client paie : produits ${fmt(st)} + livraison ${fmt(fr)} = <strong>${fmt(st + fr)} FCFA</strong>` +
-    `<br><span class="help-text">Dans la caisse : ${fmt(clientPaie ? st : st + fr)} FCFA` +
-    (clientPaie ? (fr ? ` (la livraison va directement au livreur)` : "") : (Number(coutEl.value) ? ` • ${fmt(coutEl.value)} FCFA payés au livreur (Frais)` : "")) + `</span>`;
+    `Le client paie : produits ${fmt(st)}${t.client ? ` + livraison ${fmt(t.client)}` : ""} = <strong>${fmt(st + t.client)} FCFA</strong>` +
+    `<br><span class="help-text">Dans la caisse à la livraison : +${fmt(st)} FCFA (produits)` +
+    (t.boutique ? ` − ${fmt(t.boutique)} FCFA (part boutique pour le livreur, dans Frais)` : "") + `</span>`;
 }
 
 // Nom choisi dans la liste → on complète le téléphone
@@ -544,8 +591,8 @@ function livRemplirAdresse() {
 
 function livViderForm() {
   ["liv-id", "liv-client", "liv-tel", "liv-adresse", "liv-repere", "liv-note"].forEach((i) => (document.getElementById(i).value = ""));
-  document.getElementById("liv-frais").value = 0;
-  document.getElementById("liv-cout").value = 0;
+  document.getElementById("liv-prix").value = 0;
+  document.getElementById("liv-part-client").value = 0;
   document.getElementById("liv-payeur").value = "client";
   document.getElementById("liv-client-info").className = "liv-client-info hidden";
   liv.nomAuto = false;
@@ -555,8 +602,8 @@ function livViderForm() {
   document.getElementById("liv-form-titre").textContent = "Nouvelle commande à livrer";
   document.getElementById("liv-lignes").innerHTML = "";
   liv.source = "";
-  liv.coutModifie = false;
   livAjouterLigne();
+  livCalculer();
 }
 
 function livModifier(id) {
@@ -570,10 +617,20 @@ function livModifier(id) {
   document.getElementById("liv-adresse").value = c["Adresse"];
   document.getElementById("liv-repere").value = c["Repère"];
   document.getElementById("liv-note").value = c["Note"];
-  document.getElementById("liv-frais").value = c["Frais livraison"] || 0;
-  document.getElementById("liv-cout").value = c["Coût livreur"] === "" ? (c["Frais livraison"] || 0) : c["Coût livreur"];
-  liv.coutModifie = String(document.getElementById("liv-cout").value) !== String(document.getElementById("liv-frais").value);
-  document.getElementById("liv-payeur").value = livPayeur(c);
+  {
+    const F = Number(c["Frais livraison"]) || 0;
+    const C = livCout(c);
+    let payeur = livPayeur(c), prix = F, part = F;
+    if (payeur === "partage") prix = F + C;
+    else if (payeur === "boutique") {
+      // ancienne commande où le client payait la livraison : devient « partagé »
+      if (F > 0) { payeur = "partage"; prix = Math.max(C, F); part = Math.min(F, prix); }
+      else { prix = C; part = 0; }
+    }
+    document.getElementById("liv-prix").value = prix;
+    document.getElementById("liv-part-client").value = part;
+    document.getElementById("liv-payeur").value = payeur;
+  }
   document.getElementById("liv-date").value = c["Livraison prévue"];
   document.getElementById("liv-paiement").value = c["Paiement"];
   document.getElementById("liv-livreur").value = c["Livreur"];
@@ -621,9 +678,9 @@ async function livEnregistrer() {
     adresse: $("liv-adresse").value.trim(),
     repere: $("liv-repere").value.trim(),
     produits: lignes,
-    frais: Number($("liv-frais").value) || 0,
-    payeur: $("liv-payeur").value,
-    coutLivreur: $("liv-payeur").value === "client" ? 0 : Number($("liv-cout").value) || 0,
+    frais: livParts().client,          // part du client (payée au livreur)
+    payeur: livParts().payeur,
+    coutLivreur: livParts().boutique,  // part de la boutique (caisse → Frais)
     dateLivraison: $("liv-date").value,
     paiement: $("liv-paiement").value,
     paye: !livMethod($("liv-paiement").value),
@@ -681,7 +738,7 @@ function livRendreLivreurs() {
     const enCours = mes.filter((c) => ["Assignée", "En route"].includes(c["Statut"])).length;
     const auj = mes.filter((c) => c["Statut"] === "Livrée" && String(c["Livrée le"]).startsWith(j));
     const especes = auj.filter((c) => livMethod(c["Paiement"]) === "cash").reduce((s, c) => s + livMontantBoutique(c), 0);
-    const paye = auj.filter((c) => livPayeur(c) === "boutique").reduce((s, c) => s + (Number(c["Coût livreur"]) || 0), 0);
+    const paye = auj.filter((c) => livPayeur(c) !== "client").reduce((s, c) => s + livCout(c), 0);
     return `<tr>
       <td><strong>${proEscape(l["Nom"])}</strong><br><small>${proEscape(l["Téléphone"])}</small></td>
       <td>${enCours}</td>
@@ -705,10 +762,11 @@ function livRendreBilan() {
   const annulees = recues.filter((c) => ["Annulée", "Retournée"].includes(c["Statut"])).length;
   const somme = (L, k) => L.reduce((s, c) => s + (Number(c[k]) || 0), 0);
   const enCours = liv.commandes.filter((c) => LIV_ACTIFS.includes(c["Statut"]));
-  const parBoutique = livrees.filter((c) => livPayeur(c) === "boutique");
-  const parClient = livrees.filter((c) => livPayeur(c) === "client");
-  const fraisFactures = somme(parBoutique, "Frais livraison");
-  const fraisPayes = somme(parBoutique, "Coût livreur");
+  const parBoutique = livrees.filter((c) => livPayeur(c) !== "client");   // boutique paie tout ou une partie
+  const parClient = livrees.filter((c) => livPayeur(c) !== "boutique");    // le client paie tout ou une partie au livreur
+  const fraisPayes = parBoutique.reduce((s, c) => s + livCout(c), 0);
+  const nbOffertes = livrees.filter((c) => livPayeur(c) === "boutique").length;
+  const nbPartagees = livrees.filter((c) => livPayeur(c) === "partage").length;
   const caBoutique = livrees.reduce((s, c) => s + livMontantBoutique(c), 0);
 
   const card = (label, value, sub = "") =>
@@ -720,9 +778,7 @@ function livRendreBilan() {
     card("Annulées / retournées", fmt(annulees), recues.length ? `${Math.round((annulees * 100) / recues.length)}%` : "") +
     card("CA livré (dans la caisse)", fmt(caBoutique) + " FCFA") +
     card("Livraisons payées par les clients au livreur", fmt(somme(parClient, "Frais livraison")) + " FCFA", `${parClient.length} commande(s), hors caisse`) +
-    card("Frais facturés (boutique paie le livreur)", fmt(fraisFactures) + " FCFA") +
-    card("Payé aux livreurs par la caisse", fmt(fraisPayes) + " FCFA",
-      fraisFactures - fraisPayes >= 0 ? `<span class="text-pos">+${fmt(fraisFactures - fraisPayes)} gardé</span>` : `<span class="text-neg">−${fmt(fraisPayes - fraisFactures)} à ta charge</span>`) +
+    card("Payé aux livreurs par la caisse", fmt(fraisPayes) + " FCFA", `${nbOffertes} offerte(s) • ${nbPartagees} partagée(s)`) +
     card("Panier moyen", fmt(livrees.length ? somme(livrees, "Sous-total") / livrees.length : 0) + " FCFA");
 
   const parSource = {};
@@ -755,13 +811,11 @@ document.addEventListener("DOMContentLoaded", () => {
   livViderForm();
   livMajBadge();
   livCharger(true);
-  document.getElementById("liv-frais")?.addEventListener("input", livCalculer);
-  document.getElementById("liv-cout")?.addEventListener("input", () => { liv.coutModifie = true; });
+  document.getElementById("liv-prix")?.addEventListener("input", livCalculer);
+  document.getElementById("liv-part-client")?.addEventListener("input", livCalculer);
   document.getElementById("liv-client")?.addEventListener("change", livClientTape);
   document.getElementById("liv-tel")?.addEventListener("input", livTelTape);
   document.getElementById("liv-client")?.addEventListener("input", () => { liv.nomAuto = false; });
-  document.getElementById("liv-payeur")?.addEventListener("change", livCalculer);
-  document.getElementById("liv-cout")?.addEventListener("input", livCalculer);
   document.getElementById("liv-rech")?.addEventListener("input", livRendreListe);
   document.getElementById("liv-f-livreur")?.addEventListener("change", livRendreListe);
   document.getElementById("liv-f-source")?.addEventListener("change", livRendreListe);
