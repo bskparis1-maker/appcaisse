@@ -5487,14 +5487,13 @@ function testeurChercher() {
   const input = document.getElementById("testeur-recherche");
   const list = document.getElementById("testeur-liste");
   const q = sansAccent(input.value.trim());
-  if (q.length < 2) { list.classList.add("hidden"); list.innerHTML = ""; return; }
-  const res = (products || []).filter((p) => !isServiceProduct(p) && sansAccent(p.name).includes(q))
-    .sort((a, b) => (sansAccent(a.name).startsWith(q) ? 0 : 1) - (sansAccent(b.name).startsWith(q) ? 0 : 1) ||
-      String(a.name).localeCompare(String(b.name), "fr"))
-    .slice(0, 8);
+  // ✅ seulement les produits en stock (sans recherche : toute la liste, triée par nom)
+  const res = (products || []).filter((p) => !isServiceProduct(p) && (Number(p.stock) || 0) > 0 && (!q || sansAccent(p.name).includes(q)))
+    .sort((a, b) => (q ? (sansAccent(a.name).startsWith(q) ? 0 : 1) - (sansAccent(b.name).startsWith(q) ? 0 : 1) : 0) ||
+      String(a.name).localeCompare(String(b.name), "fr"));
   list.innerHTML = res.map((p) =>
     `<button type="button" onclick="testeurChoisir('${proEscape(String(p.id))}')"><strong>${proEscape(p.name)}</strong> <small>stock ${Number(p.stock) || 0}</small></button>`
-  ).join("") || `<div class="help-text" style="padding:6px 8px;">Aucun produit trouvé.</div>`;
+  ).join("") || `<div class="help-text" style="padding:6px 8px;">${q ? "Aucun produit en stock ne correspond." : "Aucun produit en stock."}</div>`;
   list.classList.remove("hidden");
 }
 
@@ -5671,3 +5670,9 @@ function renderPertesView() {
         <td>${x.note && x.note !== PERTE_TYPES[x.type].label ? proEscape(x.note) : ""}</td></tr>`).join("")
     : `<tr><td colspan="6">Rien sur cette période.</td></tr>`;
 }
+
+// ferme la liste des produits (testeurs) quand on touche ailleurs
+document.addEventListener("click", (e) => {
+  const list = document.getElementById("testeur-liste");
+  if (list && !list.classList.contains("hidden") && !e.target.closest("#testeur-panel .client-picker")) list.classList.add("hidden");
+});

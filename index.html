@@ -139,7 +139,7 @@
           <button type="button" class="pay-mode" data-type="casse" onclick="testeurType('casse')">💥 Casse</button>
         </div>
         <div class="client-picker">
-          <input type="text" id="testeur-recherche" placeholder="🔍 Chercher le produit…" oninput="testeurChercher()" autocomplete="off" />
+          <input type="text" id="testeur-recherche" placeholder="🔍 Touche ici pour voir les produits en stock, ou tape un nom…" oninput="testeurChercher()" onfocus="testeurChercher()" autocomplete="off" />
           <div id="testeur-choisi"></div>
           <div id="testeur-liste" class="client-picker-list hidden"></div>
         </div>

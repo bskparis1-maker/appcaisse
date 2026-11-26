@@ -1456,3 +1456,4 @@ nav button.nav-current { box-shadow: 0 0 0 3px #fed7aa; }
 .liv-repartition { font-size: 14px; margin-top: 8px; color: #374151; }
 #pertes-mois td:first-child { text-transform: capitalize; }
 .liv-qui-paie input[type="number"] { display: block; width: 100%; max-width: 280px; margin-top: 4px; }
+#testeur-liste { max-height: 280px; overflow-y: auto; }
