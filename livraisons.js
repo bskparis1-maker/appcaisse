@@ -284,6 +284,7 @@ async function livSupprimer(id) {
 async function livLivree(id) {
   const c = livParId(id);
   if (!c) return;
+  if (!stockPret()) return;
   const method = livMethod(c["Paiement"]);
   const lignes = livProduits(c);
   const payeur = livPayeur(c);

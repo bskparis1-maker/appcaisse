@@ -1457,3 +1457,8 @@ nav button.nav-current { box-shadow: 0 0 0 3px #fed7aa; }
 #pertes-mois td:first-child { text-transform: capitalize; }
 .liv-qui-paie input[type="number"] { display: block; width: 100%; max-width: 280px; margin-top: 4px; }
 #testeur-liste { max-height: 280px; overflow-y: auto; }
+
+/* ✅ Alerte stock non enregistré */
+.stock-alerte { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 9999;
+  background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; border-radius: 10px; padding: 10px 14px;
+  font-size: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.15); max-width: 92vw; }

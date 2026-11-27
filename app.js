@@ -105,52 +105,205 @@ let creditPayments = [];
 let pendingCreditClient = null;
 let productsLoadedFromSheet = false; // ✅ vrai stock reçu de Google Sheets ?
 // ================== STOCK <-> SHEETS ==================
-function fetchStockFromSheet() {
-  const callbackName = "onStockFromSheet_" + Date.now();
-  const script = document.createElement("script");
+// ✅ 27/11 : le stock n'est plus réécrit en entier à chaque vente.
+// On garde « stockServeur » = dernier stock connu de Google Sheets. À chaque envoi, l'app calcule
+// la différence (ex : -2 pour un produit vendu) et envoie seulement ces mouvements (action stockMove).
+// Le serveur les applique au stock actuel (un appareil à la fois) et renvoie le stock à jour.
+let stockServeur = null;          // { id: {id, name, price, stock} } tel que dans Google Sheets
+let stockEnvoiEnCours = false;
+let stockARenvoyer = false;
+let stockEchecs = 0;
 
-  window[callbackName] = function (data) {
-    try {
-      if (data && Array.isArray(data.products) && data.products.length > 0) {
-        products = data.products.map((p) => ({
-          id: Number(p.id),
-          name: p.name,
-          price: Number(p.price),
-          stock: Number(p.stock)
-        }));
-        saveProducts(products);
-        productsLoadedFromSheet = true;
-      }
-    } finally {
-      renderProductsForSale();
-      renderProductsTable();
-      renderCart();
-      // ✅ (les ventes sont déjà chargées au démarrage : on ne les recharge plus 2 fois)
-      refreshProIfVisible();
-      delete window[callbackName];
-      script.remove();
-    }
-  };
-
-  script.src = `${SHEET_URL}?action=getStock&callback=${callbackName}`;
-  script.onerror = function () {
-    console.warn("Erreur chargement stock, utilisation locale.");
-    renderProductsForSale();
-    renderProductsTable();
-    renderCart();
-  };
-  document.body.appendChild(script);
+function stockVersCarte(list) {
+  const m = {};
+  (list || []).forEach((p) => { m[String(p.id)] = { id: Number(p.id), name: p.name, price: Number(p.price) || 0, stock: Number(p.stock) || 0 }; });
+  return m;
 }
 
-function sendStockToSheet(productsToSend) {
-  const payload = encodeURIComponent(JSON.stringify({ products: productsToSend }));
-  const url = `${SHEET_URL}?action=updateStock&payload=${payload}`;
+// Fusionne le stock reçu de Sheets avec les changements locaux pas encore envoyés
+function stockFusionner(listeServeur) {
+  const ancien = stockServeur || {};
+  const nouveau = stockVersCarte(listeServeur);
+  const locaux = {};
+  (products || []).forEach((p) => { locaux[String(p.id)] = p; });
 
+  const resultat = [];
+  Object.values(nouveau).forEach((sp) => {
+    const loc = locaux[String(sp.id)];
+    const base = ancien[String(sp.id)];
+    // changement fait sur cet appareil et pas encore envoyé
+    const enAttente = loc && base ? (Number(loc.stock) || 0) - base.stock : 0;
+    const prod = { id: sp.id, name: sp.name, price: sp.price, stock: Math.max(0, sp.stock + enAttente) };
+    if (loc && base) {
+      if (loc.name !== base.name) prod.name = loc.name;
+      if (Number(loc.price) !== base.price) prod.price = Number(loc.price) || 0;
+    }
+    resultat.push(prod);
+  });
+  // produits créés ici et pas encore envoyés
+  (products || []).forEach((p) => {
+    if (!nouveau[String(p.id)] && !ancien[String(p.id)] && productsLoadedFromSheet) resultat.push(p);
+  });
+  stockServeur = nouveau;
+  products = resultat;
+  productsLoadedFromSheet = true;
+  saveProducts(products);
+}
+
+function stockRafraichirEcran() {
+  renderProductsForSale();
+  renderProductsTable();
+  renderCart();
+  if (typeof updateNavBadges === "function") updateNavBadges();
+  if (typeof renderTesteurPanel === "function") renderTesteurPanel();
+  refreshProIfVisible();
+}
+
+// Appel JSONP générique (réponse du serveur)
+function stockJsonp(action, payload, timeoutMs = 30000) {
+  return new Promise((resolve, reject) => {
+    const cb = "onStock_" + Date.now() + "_" + Math.floor(Math.random() * 1e6);
+    const script = document.createElement("script");
+    let fini = false;
+    const finir = () => { fini = true; delete window[cb]; script.remove(); };
+    const minuteur = setTimeout(() => { if (!fini) { finir(); reject(new Error("délai dépassé")); } }, timeoutMs);
+    window[cb] = (data) => { clearTimeout(minuteur); finir(); resolve(data); };
+    script.onerror = () => { clearTimeout(minuteur); finir(); reject(new Error("réseau")); };
+    script.src = `${SHEET_URL}?action=${action}${payload ? "&payload=" + encodeURIComponent(JSON.stringify(payload)) : ""}&callback=${cb}`;
+    document.body.appendChild(script);
+  });
+}
+
+function fetchStockFromSheet() {
+  if (stockEnvoiEnCours) return; // on attend la réponse de l'envoi en cours
+  stockJsonp("getStock", null)
+    .then((data) => {
+      if (stockEnvoiEnCours) return;
+      if (data && Array.isArray(data.products) && data.products.length > 0) stockFusionner(data.products);
+      // des changements faits avant le chargement ? on les envoie maintenant
+      if (productsLoadedFromSheet) stockEnvoyerDifferences();
+    })
+    .catch(() => console.warn("Erreur chargement stock, utilisation locale."))
+    .finally(stockRafraichirEcran);
+}
+
+// Différences entre le stock de l'appareil et le dernier stock connu de Sheets
+function stockCalculerMouvements() {
+  const moves = [];
+  const base = stockServeur || {};
+  const vus = {};
+  (products || []).forEach((p) => {
+    const k = String(p.id);
+    vus[k] = true;
+    const b = base[k];
+    if (!b) { moves.push({ op: "add", id: p.id, name: p.name, price: Number(p.price) || 0, stock: Number(p.stock) || 0 }); return; }
+    const delta = (Number(p.stock) || 0) - b.stock;
+    const infoChangee = p.name !== b.name || (Number(p.price) || 0) !== b.price;
+    if (delta) moves.push({ op: "delta", id: p.id, name: p.name, price: Number(p.price) || 0, delta });
+    else if (infoChangee) moves.push({ op: "info", id: p.id, name: p.name, price: Number(p.price) || 0 });
+  });
+  Object.keys(base).forEach((k) => { if (!vus[k]) moves.push({ op: "remove", id: base[k].id }); });
+  return moves;
+}
+
+async function stockEnvoyerDifferences() {
+  if (!productsLoadedFromSheet || !stockServeur) return; // stock pas encore chargé : rien à comparer
+  if (stockEnvoiEnCours) { stockARenvoyer = true; return; }
+  const moves = stockCalculerMouvements();
+  if (!moves.length) return;
+
+  stockEnvoiEnCours = true;
+  stockARenvoyer = false;
+  const avant = stockServeur;
+  // on considère les mouvements comme envoyés (pour ne pas les compter 2 fois)
+  const prevu = JSON.parse(JSON.stringify(stockServeur));
+  moves.forEach((m) => {
+    const k = String(m.id);
+    if (m.op === "add") prevu[k] = { id: Number(m.id), name: m.name, price: m.price, stock: m.stock };
+    else if (m.op === "remove") delete prevu[k];
+    else if (prevu[k]) {
+      prevu[k].name = m.name; prevu[k].price = m.price;
+      if (m.op === "delta") prevu[k].stock = Math.max(0, prevu[k].stock + m.delta);
+    }
+  });
+  stockServeur = prevu;
+  const rid = Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+
+  let essai = 0, ok = false;
+  while (essai < 3 && !ok) {
+    essai++;
+    try {
+      const r = await stockJsonp("stockMove", { rid, moves });
+      if (r && r.ok && Array.isArray(r.products)) {
+        stockEnvoiEnCours = false;
+        stockFusionner(r.products);
+        ok = true;
+      } else if (r && r.error && !/unknown action/i.test(r.error)) {
+        console.warn("stockMove :", r.error);
+      } else {
+        // ancien Code.gs (sans stockMove) : on revient à l'ancienne méthode
+        stockServeur = avant;
+        stockEnvoiEnCours = false;
+        stockAncienneMethode();
+        return;
+      }
+    } catch (e) {
+      console.warn("stockMove échec", essai, e.message);
+    }
+    if (!ok && essai < 3) await new Promise((res) => setTimeout(res, 3000 * essai));
+  }
+  stockEnvoiEnCours = false;
+  if (!ok) {
+    // pas de réponse : on remet l'ancien état pour renvoyer ces mouvements plus tard
+    // (le serveur reconnaît l'identifiant et ne les applique pas 2 fois s'ils étaient passés)
+    stockServeur = avant;
+    stockEchecs++;
+    stockAfficherAlerte(true);
+    setTimeout(stockEnvoyerDifferences, 20000);
+    return;
+  }
+  stockEchecs = 0;
+  stockAfficherAlerte(false);
+  stockRafraichirEcran();
+  if (stockARenvoyer) stockEnvoyerDifferences();
+}
+
+// ancien envoi (tout le stock) si le Code.gs n'a pas encore été mis à jour
+function stockAncienneMethode() {
+  const payload = encodeURIComponent(JSON.stringify({ products }));
   const iframe = document.createElement("iframe");
   iframe.style.display = "none";
-  iframe.src = url;
+  iframe.src = `${SHEET_URL}?action=updateStock&payload=${payload}`;
   document.body.appendChild(iframe);
-  setTimeout(() => iframe.remove(), 5000);
+  setTimeout(() => iframe.remove(), 15000);
+  stockServeur = stockVersCarte(products);
+}
+
+function stockAfficherAlerte(show) {
+  let el = document.getElementById("stock-alerte");
+  if (!el && show) {
+    el = document.createElement("div");
+    el.id = "stock-alerte";
+    el.className = "stock-alerte";
+    document.body.appendChild(el);
+  }
+  if (!el) return;
+  el.textContent = "⚠️ Stock pas encore enregistré dans Google Sheets (internet ?). Nouvel essai automatique…";
+  el.classList.toggle("hidden", !show);
+}
+
+// Le stock est-il chargé ? (sinon on bloque ventes / sorties de stock)
+function stockPret() {
+  if (productsLoadedFromSheet) return true;
+  alert("⏳ Le stock n'est pas encore chargé depuis Google Sheets. Attends quelques secondes et réessaie.");
+  fetchStockFromSheet();
+  return false;
+}
+
+// ✅ Toutes les fonctions qui modifiaient le stock appellent encore sendStockToSheet(products) :
+// elle envoie maintenant seulement les différences.
+function sendStockToSheet() {
+  stockEnvoyerDifferences();
 }
 
 // ================== CLIENTS <-> SHEETS ==================
@@ -1186,6 +1339,7 @@ function confirmSale() {
     alert("Panier vide !");
     return;
   }
+  if (!stockPret()) return; // ✅ jamais de vente sur un stock pas chargé
 
   const isCreditSale = document.getElementById("credit-mode")?.checked === true;
 
@@ -1712,17 +1866,8 @@ function updateProductStock(productId) {
   renderStockHistoryTable();
 }
 
-function sendStockToSheetWithFallback(productsList) {
-  if (typeof sendStockToSheet === "function") {
-    sendStockToSheet(productsList);
-    return;
-  }
-  const payload = JSON.stringify({ products: productsList });
-  const url = `${SHEET_URL}?action=updateStock&payload=${encodeURIComponent(payload)}`;
-  fetch(url)
-    .then((r) => r.text())
-    .then((txt) => console.log("updateStock ->", txt))
-    .catch((err) => console.error("updateStock error:", err));
+function sendStockToSheetWithFallback() {
+  stockEnvoyerDifferences();
 }
 
 function logStockChangeToSheet(change) {
@@ -2972,6 +3117,7 @@ function openRefundModal(saleId) {
 }
 
 async function validerRemboursement(sale, lignes, box) {
+  if (!stockPret()) return;
   const $ = (id) => box.querySelector("#" + id);
   const err = (m) => { $("refund-error").textContent = m; $("refund-error").classList.remove("hidden"); };
   const choix = [...box.querySelectorAll(".refund-qty")].map((inp) => ({ ...lignes[inp.dataset.i], q: Number(inp.value) || 0 }))
@@ -5342,6 +5488,12 @@ document.addEventListener("DOMContentLoaded", () => {
   setInterval(() => {
     fetchSalesFromSheet();
   }, 30000);
+
+  // ✅ stock rechargé toutes les 45 s (ventes faites sur un autre appareil)
+  setInterval(() => {
+    if (!document.hidden) fetchStockFromSheet();
+  }, 45000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) fetchStockFromSheet(); });
 });
 // =====================================================================
 // ================== SOUS-ONGLETS DE PRO ==================
@@ -5509,6 +5661,7 @@ function testeurProduit() {
 }
 
 function testeurValider() {
+  if (!stockPret()) return;
   const p = testeurProduit();
   if (!p) return alert("Choisis d'abord le produit.");
   const qty = parseInt(document.getElementById("testeur-qte").value, 10);

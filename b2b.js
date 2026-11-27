@@ -143,6 +143,7 @@ function b2bProduitDe(l) {
 }
 // delta négatif = sortie de stock ; renvoie un message d'erreur si stock insuffisant
 function b2bVerifierStock(lignes) {
+  if (!productsLoadedFromSheet) { fetchStockFromSheet(); return "⏳ Le stock n'est pas encore chargé depuis Google Sheets. Attends quelques secondes et réessaie."; }
   for (const l of lignes) {
     const p = b2bProduitDe(l);
     if (!p) return `« ${l.nom} » n'existe plus dans les produits.`;
