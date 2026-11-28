@@ -2265,7 +2265,7 @@ function renderExpensesTable() {
 
   if (!Array.isArray(expenses) || expenses.length === 0) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="5">Aucune dépense enregistrée.</td>`;
+    tr.innerHTML = `<td colspan="6">Aucune dépense enregistrée.</td>`;
     tbody.appendChild(tr);
     return;
   }
@@ -2289,7 +2289,7 @@ function renderExpensesTable() {
 
   if (filtered.length === 0) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="5">Aucune dépense pour cette période.</td>`;
+    tr.innerHTML = `<td colspan="6">Aucune dépense pour cette période.</td>`;
     tbody.appendChild(tr);
     return;
   }
@@ -2309,13 +2309,50 @@ function renderExpensesTable() {
       <td>${proEscape(info.motif)}</td>
       <td><span class="badge ${info.source === "coffre" ? "warn" : "neutral"}">${SOURCE_LABELS[info.source]}</span></td>
       <td>${fmt(e.amount)} FCFA</td>
+      <td><button type="button" class="small-btn danger-btn" title="Supprimer ce frais" onclick="supprimerFrais('${proEscape(String(e.id))}', '${proEscape(String(e.date))}')">🗑️</button></td>
     `;
     tbody.appendChild(tr);
   });
 
   const trTotal = document.createElement("tr");
-  trTotal.innerHTML = `<td colspan="5" style="text-align:right;"><strong>Total : ${fmt(total)} FCFA</strong></td>`;
+  trTotal.innerHTML = `<td colspan="6" style="text-align:right;"><strong>Total : ${fmt(total)} FCFA</strong></td>`;
   tbody.appendChild(trTotal);
+}
+
+// ✅ Supprimer un frais (code 0507) : retiré de Google Sheets, l'argent revient dans la caisse
+async function supprimerFrais(id, date) {
+  const e = (expenses || []).find((x) => String(x.id) === String(id) && String(x.date) === String(date));
+  if (!e) return alert("Frais introuvable. Recharge la page.");
+  const info = parseExpense(e);
+  const d = new Date(e.date);
+  const quand = isNaN(d.getTime()) ? e.date : d.toLocaleString("fr-FR");
+  const liv = /Livraison CMD-/i.test(e.label || "")
+    ? `<br><br>⚠️ Ce frais vient d'une livraison : la commande restera « Livrée ».`
+    : "";
+  const ok = await requireDeletePassword(
+    `Supprimer ce frais ?<br><br><strong>${proEscape(info.category)}</strong> : ${proEscape(info.motif)}<br>` +
+    `${fmt(e.amount)} FCFA • ${proEscape(quand)}<br><br>Les ${fmt(e.amount)} FCFA reviendront dans « Argent dans la caisse ».${liv}`,
+    true
+  );
+  if (!ok) return;
+
+  let r;
+  try {
+    r = await stockJsonp("deleteExpense", { code: DELETE_PASSWORD, date: isNaN(d.getTime()) ? e.date : d.toISOString(), label: e.label || "", amount: Number(e.amount) || 0 });
+  } catch (err) {
+    return alert("⚠️ Pas de réponse de Google Sheets (" + err.message + "). Le frais n'a pas été supprimé, réessaie.");
+  }
+  if (!r || !r.ok) {
+    const msg = r && r.error ? r.error : "";
+    if (/unknown action/i.test(msg)) return alert("⚠️ Le script Google (Code.gs) n'est pas encore à jour : remplace-le puis fais « Nouvelle version ».");
+    return alert("⚠️ Suppression impossible : " + (msg || "erreur inconnue"));
+  }
+  expenses = expenses.filter((x) => x !== e);
+  saveExpenses(expenses);
+  renderExpensesTable();
+  renderCaisseBox();
+  refreshProIfVisible();
+  alert("✅ Frais supprimé.");
 }
 
 function clearExpenseHistoryRange() {
